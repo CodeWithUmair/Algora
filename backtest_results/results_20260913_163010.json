@@ -1,0 +1,297 @@
+{
+  "symbol": "USTECm",
+  "data_fetched_at": "2026-09-13T16:30:10.607603+00:00",
+  "earliest_available_bar": "2026-06-02T20:10:00+00:00",
+  "latest_available_bar": "2026-09-11T20:54:00+00:00",
+  "total_days_available": 101,
+  "strategy_params": {
+    "range_size_points": 15.0,
+    "htf_range_size_points": 60.0,
+    "profile_bin_size_points": 5.0,
+    "value_area_pct": 0.68,
+    "session_anchor_hour_utc": 0,
+    "volume_spike_lookback": 20,
+    "volume_spike_mult": 2.0,
+    "absorption_buffer_atr": 0.5,
+    "absorption_max_body_ratio": 0.35,
+    "breakout_min_body_ratio": 0.6,
+    "rr_ratio": 2.0,
+    "be_trigger_ratio": 0.7,
+    "fade_pierce_min_points": 3.0,
+    "atr_period": 14,
+    "min_rr_ratio": 1.5,
+    "min_sl_distance_points": 8.0,
+    "max_sl_distance_points": 60.0,
+    "enable_htf_filter": true,
+    "htf_ema_period": 50,
+    "enable_session_filter": true,
+    "session_start_utc_minutes": 810,
+    "session_end_utc_minutes": 840
+  },
+  "windows": [
+    {
+      "window_months_requested": 1,
+      "clipped_to_available": false,
+      "window_start": "2026-08-12T20:54:00+00:00",
+      "window_end": "2026-09-11T20:54:00+00:00",
+      "m1_bars": 30100,
+      "range_bars": 6616,
+      "overall": {
+        "trades": 33,
+        "win_rate_pct": 36.36,
+        "profit_factor": 1.32,
+        "expectancy_r": 0.17,
+        "expectancy_usd": 0.68,
+        "total_net_pnl_usd": 22.39,
+        "max_drawdown_pct": 0.38,
+        "max_drawdown_usd": 38.51,
+        "sharpe_ratio": 12.84,
+        "noise_gate_passed": true,
+        "noise_p_value": 0.0099,
+        "z_score": 3.18,
+        "max_consecutive_losses": 8,
+        "payoff_ratio": 2.31
+      },
+      "in_sample": {
+        "trades": 30,
+        "win_rate_pct": 36.67,
+        "profit_factor": 1.28,
+        "expectancy_r": 0.152,
+        "total_net_pnl_usd": 17.99
+      },
+      "out_of_sample": {
+        "trades": 3,
+        "win_rate_pct": 33.33,
+        "profit_factor": 1.66,
+        "expectancy_r": 0.357,
+        "total_net_pnl_usd": 4.4
+      },
+      "model_mix": {
+        "SQUEEZE": 2,
+        "FAILED_AUCTION": 31
+      },
+      "initial_balance": 10000.0,
+      "final_balance": 10022.39
+    },
+    {
+      "window_months_requested": 2,
+      "clipped_to_available": false,
+      "window_start": "2026-07-13T20:54:00+00:00",
+      "window_end": "2026-09-11T20:54:00+00:00",
+      "m1_bars": 60440,
+      "range_bars": 19602,
+      "overall": {
+        "trades": 57,
+        "win_rate_pct": 33.33,
+        "profit_factor": 1.12,
+        "expectancy_r": 0.079,
+        "expectancy_usd": 0.27,
+        "total_net_pnl_usd": 15.48,
+        "max_drawdown_pct": 0.3,
+        "max_drawdown_usd": 30.42,
+        "sharpe_ratio": 5.54,
+        "noise_gate_passed": true,
+        "noise_p_value": 0.0099,
+        "z_score": 3.97,
+        "max_consecutive_losses": 6,
+        "payoff_ratio": 2.24
+      },
+      "in_sample": {
+        "trades": 40,
+        "win_rate_pct": 32.5,
+        "profit_factor": 1.17,
+        "expectancy_r": 0.107,
+        "total_net_pnl_usd": 15.26
+      },
+      "out_of_sample": {
+        "trades": 17,
+        "win_rate_pct": 35.29,
+        "profit_factor": 1.01,
+        "expectancy_r": 0.012,
+        "total_net_pnl_usd": 0.22
+      },
+      "model_mix": {
+        "FAILED_AUCTION": 56,
+        "SQUEEZE": 1
+      },
+      "initial_balance": 10000.0,
+      "final_balance": 10015.5
+    },
+    {
+      "window_months_requested": 3,
+      "clipped_to_available": false,
+      "window_start": "2026-06-14T22:00:00+00:00",
+      "window_end": "2026-09-11T20:54:00+00:00",
+      "m1_bars": 88919,
+      "range_bars": 33801,
+      "overall": {
+        "trades": 94,
+        "win_rate_pct": 28.72,
+        "profit_factor": 1.21,
+        "expectancy_r": 0.135,
+        "expectancy_usd": 0.5,
+        "total_net_pnl_usd": 47.07,
+        "max_drawdown_pct": 0.32,
+        "max_drawdown_usd": 32.21,
+        "sharpe_ratio": 7.53,
+        "noise_gate_passed": true,
+        "noise_p_value": 0.0099,
+        "z_score": 3.68,
+        "max_consecutive_losses": 8,
+        "payoff_ratio": 3.0
+      },
+      "in_sample": {
+        "trades": 60,
+        "win_rate_pct": 26.67,
+        "profit_factor": 1.21,
+        "expectancy_r": 0.14,
+        "total_net_pnl_usd": 31.02
+      },
+      "out_of_sample": {
+        "trades": 34,
+        "win_rate_pct": 32.35,
+        "profit_factor": 1.21,
+        "expectancy_r": 0.125,
+        "total_net_pnl_usd": 16.05
+      },
+      "model_mix": {
+        "FAILED_AUCTION": 91,
+        "SQUEEZE": 3
+      },
+      "initial_balance": 10000.0,
+      "final_balance": 10047.13
+    },
+    {
+      "window_months_requested": 4,
+      "clipped_to_available": true,
+      "window_start": "2026-06-02T20:10:00+00:00",
+      "window_end": "2026-09-11T20:54:00+00:00",
+      "m1_bars": 99999,
+      "range_bars": 40253,
+      "overall": {
+        "trades": 94,
+        "win_rate_pct": 26.6,
+        "profit_factor": 1.14,
+        "expectancy_r": 0.088,
+        "expectancy_usd": 0.33,
+        "total_net_pnl_usd": 31.35,
+        "max_drawdown_pct": 0.56,
+        "max_drawdown_usd": 55.89,
+        "sharpe_ratio": 4.75,
+        "noise_gate_passed": true,
+        "noise_p_value": 0.0099,
+        "z_score": 3.46,
+        "max_consecutive_losses": 8,
+        "payoff_ratio": 3.14
+      },
+      "in_sample": {
+        "trades": 52,
+        "win_rate_pct": 25.0,
+        "profit_factor": 1.32,
+        "expectancy_r": 0.223,
+        "total_net_pnl_usd": 40.96
+      },
+      "out_of_sample": {
+        "trades": 42,
+        "win_rate_pct": 28.57,
+        "profit_factor": 0.91,
+        "expectancy_r": -0.078,
+        "total_net_pnl_usd": -9.61
+      },
+      "model_mix": {
+        "FAILED_AUCTION": 93,
+        "SQUEEZE": 1
+      },
+      "initial_balance": 10000.0,
+      "final_balance": 10031.38
+    },
+    {
+      "window_months_requested": 5,
+      "clipped_to_available": true,
+      "window_start": "2026-06-02T20:10:00+00:00",
+      "window_end": "2026-09-11T20:54:00+00:00",
+      "m1_bars": 99999,
+      "range_bars": 40253,
+      "overall": {
+        "trades": 94,
+        "win_rate_pct": 26.6,
+        "profit_factor": 1.14,
+        "expectancy_r": 0.088,
+        "expectancy_usd": 0.33,
+        "total_net_pnl_usd": 31.35,
+        "max_drawdown_pct": 0.56,
+        "max_drawdown_usd": 55.89,
+        "sharpe_ratio": 4.75,
+        "noise_gate_passed": true,
+        "noise_p_value": 0.0099,
+        "z_score": 3.89,
+        "max_consecutive_losses": 8,
+        "payoff_ratio": 3.14
+      },
+      "in_sample": {
+        "trades": 52,
+        "win_rate_pct": 25.0,
+        "profit_factor": 1.32,
+        "expectancy_r": 0.223,
+        "total_net_pnl_usd": 40.96
+      },
+      "out_of_sample": {
+        "trades": 42,
+        "win_rate_pct": 28.57,
+        "profit_factor": 0.91,
+        "expectancy_r": -0.078,
+        "total_net_pnl_usd": -9.61
+      },
+      "model_mix": {
+        "FAILED_AUCTION": 93,
+        "SQUEEZE": 1
+      },
+      "initial_balance": 10000.0,
+      "final_balance": 10031.38
+    },
+    {
+      "window_months_requested": 6,
+      "clipped_to_available": true,
+      "window_start": "2026-06-02T20:10:00+00:00",
+      "window_end": "2026-09-11T20:54:00+00:00",
+      "m1_bars": 99999,
+      "range_bars": 40253,
+      "overall": {
+        "trades": 94,
+        "win_rate_pct": 26.6,
+        "profit_factor": 1.14,
+        "expectancy_r": 0.088,
+        "expectancy_usd": 0.33,
+        "total_net_pnl_usd": 31.35,
+        "max_drawdown_pct": 0.56,
+        "max_drawdown_usd": 55.89,
+        "sharpe_ratio": 4.75,
+        "noise_gate_passed": true,
+        "noise_p_value": 0.0099,
+        "z_score": 3.64,
+        "max_consecutive_losses": 8,
+        "payoff_ratio": 3.14
+      },
+      "in_sample": {
+        "trades": 52,
+        "win_rate_pct": 25.0,
+        "profit_factor": 1.32,
+        "expectancy_r": 0.223,
+        "total_net_pnl_usd": 40.96
+      },
+      "out_of_sample": {
+        "trades": 42,
+        "win_rate_pct": 28.57,
+        "profit_factor": 0.91,
+        "expectancy_r": -0.078,
+        "total_net_pnl_usd": -9.61
+      },
+      "model_mix": {
+        "FAILED_AUCTION": 93,
+        "SQUEEZE": 1
+      },
+      "initial_balance": 10000.0,
+      "final_balance": 10031.38
+    }
+  ]
+}

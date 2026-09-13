@@ -4,6 +4,8 @@ A local, semi-automated scalping bot for **NASDAQ-100 (USTECm)** on MetaTrader 5
 
 **Read `STRATEGY_SPECIFICATION.md` first** — it maps every concept in the guide (Volume Profile, Big Trades filter, absorption, CVD, 0DTE sentiment) to what this bot actually computes from MT5 OHLCV data, and is explicit about where the mechanized version is an approximation of the real discretionary read.
 
+**See [`BACKTEST_REPORT.md`](BACKTEST_REPORT.md)** for results from running this engine against real `USTECm` M1 history (1/2/3-month windows, honest caveats included — not a claim of a validated edge).
+
 Sibling project to the XAU/USD gold scalper (`../VWAP-EMA-BOT`) — same architecture, safety guardrails, and dashboard design, different market and strategy engine.
 
 ---
@@ -40,9 +42,12 @@ trading_bot/
   data_feed.py         Synthetic NASDAQ-100 data generator (simulation fallback + backtest filler)
   live_engine.py       Background-thread live trading engine (Start/Stop from the dashboard)
   run_live_auto_bot.py Thin CLI wrapper around live_engine.py, for headless use
+  run_backtest_windows.py  Multi-window real-data backtest runner (see BACKTEST_REPORT.md)
   streamlit_app.py     The dashboard
   tests/               Unit tests (run_tests.py)
 STRATEGY_SPECIFICATION.md   Mechanized rules, explicit limitations
+BACKTEST_REPORT.md    Results + honest caveats from backtesting against real USTECm data
+backtest_results/     Timestamped JSON output from run_backtest_windows.py runs
 docs/fabio-valentini-strategy-guide.md   The original discretionary strategy guide
 HANDOFF.md            Full project reference + session log
 backups/              Dated SQLite snapshots (see backups/README.md)
