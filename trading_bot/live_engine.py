@@ -27,7 +27,6 @@ from trading_bot.strategy import (
     evaluate_htf_trend,
     evaluate_signal_at_bar,
     is_in_session_window,
-    calculate_position_size,
 )
 from trading_bot.circuit_breakers import CircuitBreakerConfig, CircuitBreakerManager
 from trading_bot.storage import BotStorage
@@ -116,14 +115,23 @@ class LiveTradingEngine:
 
             params = StrategyParameters()
             trade_symbol = self.symbol
-            risk_per_trade_usd = 3.0
+            fixed_lot_size = 0.1  # Validated 2026-09-14 via backtest.run_causal_backtest(fixed_lot_size=0.1,
+                                   # daily_loss_cap_usd=10.0) against real M15 USTECm data - see
+                                   # BACKTEST_REPORT.md's "Parameter optimization" section. Not risk-based
+                                   # sizing (that was the previous default here) - a fixed lot, chosen because
+                                   # that's what was actually backtested and forward-test-approved.
             daily_profit_target_usd = 15.0
-            enable_daily_profit_lock = True
+            enable_daily_profit_lock = False  # Deliberately off: every backtest in BACKTEST_REPORT.md let
+                                               # winners run uncapped - only losses are capped (below). This
+                                               # was True before 2026-09-14, silently capping daily upside in
+                                               # a way no backtest ever accounted for - now consistent with
+                                               # what was actually tested and approved for forward testing.
 
             cb_config = CircuitBreakerConfig(
                 bypass_noise_gate_for_demo=True,
                 max_consecutive_losses=3,
-                max_daily_loss_usd=15.0,
+                max_daily_loss_usd=10.0,  # Matches the validated $10/day loss cap from BACKTEST_REPORT.md
+                                           # (was 15.0 - untested value).
                 cooldown_after_loss_minutes=5,
             )
             cb_manager = CircuitBreakerManager(config=cb_config)
@@ -142,8 +150,8 @@ class LiveTradingEngine:
             self.status["balance"] = acc.balance
 
             self._log(f"✅ Connected to MT5 Account: {acc.login} | Mode: {acc.trade_mode} | Balance: ${acc.balance:,.2f}")
-            self._log(f"⚡ Symbol: {trade_symbol} | Risk/Trade: ${risk_per_trade_usd:.2f} | Algo Allowed: {algo_allowed}")
-            self._log(f"🔒 Daily Profit Target: ${daily_profit_target_usd:.2f} (Lock Active: {enable_daily_profit_lock})")
+            self._log(f"⚡ Symbol: {trade_symbol} | Fixed Lot: {fixed_lot_size} | Algo Allowed: {algo_allowed}")
+            self._log(f"🛡️ Daily Loss Cap: ${cb_config.max_daily_loss_usd:.2f} (profit uncapped - lock active: {enable_daily_profit_lock})")
 
             last_processed_range_bar_time = None
             last_loss_time = 0
@@ -290,10 +298,10 @@ class LiveTradingEngine:
                 sl_clamped = min(max(sig.risk_points, params.min_sl_distance_points), params.max_sl_distance_points)
                 sl_price = sig.close_price - sl_clamped if sig.direction == "BUY" else sig.close_price + sl_clamped
 
-                lot = calculate_position_size(
-                    risk_per_trade_usd, sl_clamped, sym_info.trade_contract_size,
-                    sym_info.volume_min, sym_info.volume_max, sym_info.volume_step
-                )
+                lot = max(sym_info.volume_min, min(sym_info.volume_max, fixed_lot_size))
+                if lot != fixed_lot_size:
+                    self._log(f"⚠️ Fixed lot {fixed_lot_size} outside broker's [{sym_info.volume_min}, "
+                               f"{sym_info.volume_max}] range for {trade_symbol} - clamped to {lot}.")
 
                 self._log(f"\n🎯 >>> {sig.model} SIGNAL CONFIRMED: EXECUTING {sig.direction} ORDER (lot {lot}) <<<")
                 res = mt5_bridge.send_order(
