@@ -1,0 +1,11 @@
+# Live session trade store (per-machine, not shared)
+nasdaq_trades.sqlite
+nasdaq_trades.sqlite-journal
+nasdaq_trades_*.csv
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+.env

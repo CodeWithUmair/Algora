@@ -1,0 +1,7 @@
+# Requirements for NASDAQ-100 Order-Flow Scalper (USTECm on MT5)
+# Compatible with Python 3.9+
+
+pandas>=2.0.0
+numpy>=1.24.0
+streamlit>=1.37.0
+MetaTrader5>=5.0.45; sys_platform == 'win32'
