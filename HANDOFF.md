@@ -47,6 +47,13 @@ See `README.md` → Quick start. One command (`streamlit run trading_bot/streaml
 
 *(Newest first.)*
 
+### 2026-09-14 (cont'd) — News-avoidance filter added
+User's friend showed a Gemini chat suggesting the unofficial ForexFactory calendar mirror (`nfs.faireconomy.media/ff_calendar_thisweek.json`) as a "news feature" for the bot, claiming it's what algo bots commonly use. Independently verified before trusting the screenshot: fetched it directly, got 200 OK / 97 real events including that week's actual FOMC meeting (2026-09-16) - it's real and it works.
+
+Built `trading_bot/news_filter.py`: fetches the calendar (30-min cache, fail-open on any fetch error - a dead feed must not be able to halt the whole bot), and blocks new entries within 15 minutes (either side) of a High-impact USD event. Wired into `live_engine.py` as an additional risk shield alongside the session/HTF filters. 9 new unit tests against synthetic events (`test_news_filter.py`), all passing (29/29 total). Live smoke-tested: correctly identified "not blocked now" and "blocked" when checked against the real upcoming FOMC timestamp.
+
+**Important, repeatedly-flagged limitation: this could NOT be backtested.** The feed only ever exposes the current week, never history, so unlike every other change this session (parameter tuning, lot sizing, daily cap), this one's actual effect on the validated M15 numbers is unproven - it's a live-only extra safety layer, documented as such in `STRATEGY_SPECIFICATION.md` §7. Don't let a future session (or the user) start treating it as backtest-validated just because it sits next to things that are.
+
 ### 2026-09-14 — Perf bug fix, parameter optimization, live engine wired for forward test
 Continuation of the same backtesting thread from 2026-09-13, now spanning into 2026-09-14. In order:
 

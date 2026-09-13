@@ -3,6 +3,9 @@ nasdaq_trades.sqlite
 nasdaq_trades.sqlite-journal
 nasdaq_trades_*.csv
 
+# News calendar cache (runtime, refetched every 30 min - not shared)
+.news_calendar_cache.json
+
 # Python
 __pycache__/
 *.pyc

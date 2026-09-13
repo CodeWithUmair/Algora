@@ -30,6 +30,7 @@ from trading_bot.strategy import (
 )
 from trading_bot.circuit_breakers import CircuitBreakerConfig, CircuitBreakerManager
 from trading_bot.storage import BotStorage
+from trading_bot.news_filter import fetch_calendar, is_near_high_impact_news
 
 
 class LiveTradingEngine:
@@ -65,6 +66,7 @@ class LiveTradingEngine:
             "atr": 0.0,
             "open_positions": 0,
             "range_bars_built": 0,
+            "news_block": None,
             "last_update": None,
         }
 
@@ -153,6 +155,20 @@ class LiveTradingEngine:
             self._log(f"⚡ Symbol: {trade_symbol} | Fixed Lot: {fixed_lot_size} | Algo Allowed: {algo_allowed}")
             self._log(f"🛡️ Daily Loss Cap: ${cb_config.max_daily_loss_usd:.2f} (profit uncapped - lock active: {enable_daily_profit_lock})")
 
+            # News filter (2026-09-14): avoid opening trades within a buffer window of
+            # High-impact USD releases (NFP, CPI, FOMC, etc.) - see news_filter.py's
+            # module docstring for the honest limitation: this could NOT be backtested
+            # (the feed only ever exposes the current week), so it's a live-only,
+            # fail-open safety layer on top of the backtested daily loss cap / per-trade
+            # SL, not a backtested part of the edge itself.
+            enable_news_filter = True
+            news_buffer_minutes = 15.0
+            news_impact_levels = ("High",)
+            news_currencies = ("USD",)
+            news_refresh_seconds = 1800.0
+            news_events = []
+            last_news_fetch_time = 0.0
+
             last_processed_range_bar_time = None
             last_loss_time = 0
             processed_deal_tickets = set()
@@ -166,6 +182,11 @@ class LiveTradingEngine:
 
                 open_positions = mt5_bridge.get_open_positions()
                 self.status["open_positions"] = len(open_positions)
+
+                if enable_news_filter and (time.time() - last_news_fetch_time) >= news_refresh_seconds:
+                    news_events = fetch_calendar()
+                    last_news_fetch_time = time.time()
+                    self._log(f"📰 News calendar refreshed: {len(news_events)} events loaded.")
 
                 today_realized_pnl = 0.0
                 today_midnight_utc = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
@@ -280,6 +301,16 @@ class LiveTradingEngine:
                     continue
                 if not in_session:
                     continue
+                if enable_news_filter:
+                    near_news, news_event = is_near_high_impact_news(
+                        datetime.now(timezone.utc), news_events,
+                        buffer_minutes=news_buffer_minutes, impact_levels=news_impact_levels,
+                        currencies=news_currencies,
+                    )
+                    self.status["news_block"] = news_event["title"] if news_event else None
+                    if near_news:
+                        self._log(f"📰 Trade blocked - within {news_buffer_minutes:.0f}min of high-impact news: {news_event['title']}")
+                        continue
                 if params.enable_htf_filter:
                     if sig.direction == "BUY" and htf_trend == "BEARISH":
                         continue
