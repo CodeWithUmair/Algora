@@ -103,6 +103,9 @@ class BacktestResult:
     spread_points: float = 2.0
     commission_per_lot_usd: float = 3.0
     num_range_bars: int = 0
+    daily_loss_cap_usd: Optional[float] = None
+    daily_cap_trip_count: int = 0
+    daily_pnl_log: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def run_noise_control_gate(
@@ -221,7 +224,12 @@ def run_causal_backtest(
     fixed_lot_size: Optional[float] = None,   # None = risk-based sizing via params below
     risk_per_trade_usd: float = 3.0,
     volume_min: float = 0.05, volume_max: float = 500.0, volume_step: float = 0.01,
-    num_noise_shuffles: int = 100
+    num_noise_shuffles: int = 100,
+    daily_loss_cap_usd: Optional[float] = None,  # None = no daily loss cap (default). When set,
+                                                   # no NEW trade is opened for the rest of the UTC
+                                                   # calendar day once realized losses that day reach
+                                                   # this amount; resumes automatically next UTC day.
+                                                   # Profit is never capped - only losses halt new entries.
 ) -> BacktestResult:
     """
     Executes a causal, zero-lookahead backtest.
@@ -229,6 +237,9 @@ def run_causal_backtest(
     1. Reconstructs range bars from the input M1 OHLC (see strategy.build_range_bars).
     2. Computes session Volume Profile (VAL/VAH/POC), CVD, and ATR on the range-bar series.
     3. Walks range bars causally: signal at bar i close -> fill at bar i+1 open.
+    4. Optionally simulates a daily loss circuit breaker (see daily_loss_cap_usd above) -
+       a backtest-side approximation of circuit_breakers.py's live daily-loss breaker,
+       reimplemented here against simulated bar time rather than wall-clock time.
     """
     range_bars = build_range_bars(opens, highs, lows, closes, times, volumes, params.range_size_points)
     n = len(range_bars)
@@ -265,10 +276,26 @@ def run_causal_backtest(
     def point_value(lot: float) -> float:
         return lot * contract_size
 
+    current_day_key: Optional[str] = None
+    daily_realized_pnl = 0.0
+    day_loss_tripped = False
+    daily_cap_trip_count = 0
+    daily_pnl_log: List[Dict[str, Any]] = []
+
     for i in range(warmup, n):
         c_open, c_high, c_low, c_close = rb_opens[i], rb_highs[i], rb_lows[i], rb_closes[i]
         c_time = rb_times[i]
         is_oos = (i >= split_idx)
+
+        if daily_loss_cap_usd is not None:
+            day_key = c_time[:10]
+            if day_key != current_day_key:
+                if current_day_key is not None:
+                    daily_pnl_log.append({"date": current_day_key, "pnl_usd": round(daily_realized_pnl, 2),
+                                           "cap_tripped": day_loss_tripped})
+                current_day_key = day_key
+                daily_realized_pnl = 0.0
+                day_loss_tripped = False
 
         # 1. Fill pending signal at this bar's open
         if pending_signal is not None and open_trade is None:
@@ -343,6 +370,12 @@ def run_causal_backtest(
                 equity += net_pnl
                 open_trade = None
                 last_exit_bar = i
+
+                if daily_loss_cap_usd is not None:
+                    daily_realized_pnl += net_pnl
+                    if daily_realized_pnl <= -abs(daily_loss_cap_usd) and not day_loss_tripped:
+                        day_loss_tripped = True
+                        daily_cap_trip_count += 1
             else:
                 # Break-even shield (Model B squeeze trades only - matches the guide's 60s rule)
                 if open_trade.model == "SQUEEZE":
@@ -363,7 +396,8 @@ def run_causal_backtest(
                                 open_trade.stop_loss = be_price
 
         # 3. Evaluate playbooks at this bar's close (fills next bar)
-        if open_trade is None and pending_signal is None and i < n - 1 and (i - last_exit_bar) >= 2:
+        cap_blocks_new_entries = daily_loss_cap_usd is not None and day_loss_tripped
+        if open_trade is None and pending_signal is None and i < n - 1 and (i - last_exit_bar) >= 2 and not cap_blocks_new_entries:
             session_ok = True
             if params.enable_session_filter:
                 try:
@@ -407,6 +441,10 @@ def run_causal_backtest(
         trades.append(open_trade)
         equity += net_pnl
 
+    if daily_loss_cap_usd is not None and current_day_key is not None:
+        daily_pnl_log.append({"date": current_day_key, "pnl_usd": round(daily_realized_pnl, 2),
+                               "cap_tripped": day_loss_tripped})
+
     is_trades = [t for t in trades if not t.is_out_of_sample]
     oos_trades = [t for t in trades if t.is_out_of_sample]
 
@@ -419,5 +457,7 @@ def run_causal_backtest(
         overall_metrics=overall_metrics, trades=trades, equity_curve=equity_curve,
         split_index=split_idx, initial_balance=initial_balance, final_balance=round(equity, 2),
         symbol="USTECm", timeframe="RANGE", spread_points=spread_points,
-        commission_per_lot_usd=commission_per_lot_usd, num_range_bars=n
+        commission_per_lot_usd=commission_per_lot_usd, num_range_bars=n,
+        daily_loss_cap_usd=daily_loss_cap_usd, daily_cap_trip_count=daily_cap_trip_count,
+        daily_pnl_log=daily_pnl_log
     )

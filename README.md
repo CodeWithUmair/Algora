@@ -43,6 +43,9 @@ trading_bot/
   live_engine.py       Background-thread live trading engine (Start/Stop from the dashboard)
   run_live_auto_bot.py Thin CLI wrapper around live_engine.py, for headless use
   run_backtest_windows.py  Multi-window real-data backtest runner (see BACKTEST_REPORT.md)
+  run_backtest_timeframes.py  Multi-timeframe (M1-D1) real-data backtest runner (see BACKTEST_REPORT.md)
+  run_backtest_risk_capped.py  $100-balance/fixed-lot/$10-daily-cap backtest runner (see BACKTEST_REPORT.md)
+  optimize_parameters.py  Coordinate-descent parameter search on real M15 data (see BACKTEST_REPORT.md)
   streamlit_app.py     The dashboard
   tests/               Unit tests (run_tests.py)
 STRATEGY_SPECIFICATION.md   Mechanized rules, explicit limitations

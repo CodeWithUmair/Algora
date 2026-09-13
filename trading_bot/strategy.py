@@ -19,10 +19,19 @@ from typing import List, Dict, Any, Optional, Tuple
 
 @dataclass
 class StrategyParameters:
-    """All tunable parameters, explicit names, sensible defaults."""
+    """
+    All tunable parameters, explicit names.
+
+    Defaults below (range_size_points, absorption_max_body_ratio, volume_spike_mult,
+    breakout_min_body_ratio, rr_ratio) were tuned 2026-09-14 via a coordinate-descent
+    search against real M15 USTECm data - see BACKTEST_REPORT.md's "Parameter
+    optimization" section for the full search log, before/after numbers, and the
+    out-of-sample / cross-timeframe robustness checks run against them. Originals
+    (judgment-set, not calibrated) are noted inline per field for reference.
+    """
 
     # 1. Range bar construction
-    range_size_points: float = 15.0       # Points of movement per synthetic range bar (NASDAQ-100)
+    range_size_points: float = 8.0        # Points of movement per synthetic range bar (NASDAQ-100). Was 15.0.
     htf_range_size_points: float = 60.0   # Coarser range size used for the HTF trend filter
 
     # 2. Volume Profile
@@ -32,15 +41,15 @@ class StrategyParameters:
 
     # 3. Volume-spike ("Big Trade") detection
     volume_spike_lookback: int = 20
-    volume_spike_mult: float = 2.0
+    volume_spike_mult: float = 2.5        # Was 2.0.
 
     # 4. Model A - AAA Value Area Absorption Reversal
     absorption_buffer_atr: float = 0.5    # How close to VAL/VAH counts as "testing" it
-    absorption_max_body_ratio: float = 0.35  # Body/range must be <= this (small body = absorption)
+    absorption_max_body_ratio: float = 0.55  # Body/range must be <= this (small body = absorption). Was 0.35 - AAA never fired once at that threshold on real data; fires regularly at 0.55.
 
     # 5. Model B - Momentum / Squeeze Breakout
-    breakout_min_body_ratio: float = 0.60    # Body/range must be >= this (large body = real expansion)
-    rr_ratio: float = 2.0
+    breakout_min_body_ratio: float = 0.5     # Body/range must be >= this (large body = real expansion). Was 0.60.
+    rr_ratio: float = 3.0                    # Was 2.0.
     be_trigger_ratio: float = 0.70           # Move SL to break-even at this fraction of the way to TP
 
     # 6. Model C - Failed Auction Fade
@@ -364,7 +373,18 @@ def evaluate_signal_at_bar(
     )
 
     body_ratio = _body_range_ratio(bar.open, bar.high, bar.low, bar.close)
-    vol_spike = is_volume_spike([b.volume for b in range_bars], idx, params.volume_spike_lookback, params.volume_spike_mult)
+    # Windowed volume-spike check (only the lookback slice, not the full series - see
+    # is_volume_spike's docstring-equivalent logic). Rebuilding `[b.volume for b in range_bars]`
+    # here on every call was an O(n) rebuild of the ENTIRE range-bar series per bar evaluated,
+    # making the backtester effectively O(n^2) on long histories - this does the same lookback
+    # window check in O(volume_spike_lookback) instead.
+    lookback = params.volume_spike_lookback
+    if idx >= lookback:
+        window_vols = [range_bars[j].volume for j in range(idx - lookback, idx)]
+        avg_vol = sum(window_vols) / len(window_vols) if window_vols else 0.0
+        vol_spike = avg_vol > 0 and bar.volume >= params.volume_spike_mult * avg_vol
+    else:
+        vol_spike = False
 
     # ---- Model A: AAA Value Area Absorption Reversal ----
     buffer = params.absorption_buffer_atr * atr
