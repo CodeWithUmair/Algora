@@ -5,11 +5,18 @@ LiveTradingEngine runs the loop on a daemon thread, process-wide singleton via
 get_engine(), so the Streamlit dashboard can Start/Stop it with a button
 instead of needing a second terminal.
 
-Each cycle: fetch recent M1 bars -> reconstruct range bars -> compute Volume
+Each cycle: fetch recent M15 bars -> reconstruct range bars -> compute Volume
 Profile/CVD/ATR -> evaluate the 3 playbooks on the latest CLOSED range bar ->
 execute via MT5 if a signal fires and every risk shield clears.
+
+Timeframe is M15, not M1 (changed 2026-09-14) - the tuned StrategyParameters
+defaults (range_size_points=8.0 etc.) were searched and validated against
+range bars built from M15 source candles (see optimize_parameters.py /
+BACKTEST_REPORT.md's "Parameter optimization" section), not M1. Feeding this
+config M1 candles instead would be running an untested combination.
 """
 
+import sys
 import threading
 import time
 import collections
@@ -80,7 +87,13 @@ class LiveTradingEngine:
         try:
             print(msg, flush=True)
         except UnicodeEncodeError:
-            pass
+            # Windows consoles often default to a narrow codepage (cp1252) that can't
+            # encode this bot's emoji-heavy log lines - silently dropping the whole
+            # line (the old behavior) meant most real status output vanished on a
+            # plain Windows terminal. Re-encode with replacement chars instead so
+            # something always prints, rather than nothing.
+            encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+            print(msg.encode(encoding, errors="replace").decode(encoding), flush=True)
 
     def start(self):
         with self._lock:
@@ -117,11 +130,20 @@ class LiveTradingEngine:
 
             params = StrategyParameters()
             trade_symbol = self.symbol
-            fixed_lot_size = 0.1  # Validated 2026-09-14 via backtest.run_causal_backtest(fixed_lot_size=0.1,
-                                   # daily_loss_cap_usd=10.0) against real M15 USTECm data - see
-                                   # BACKTEST_REPORT.md's "Parameter optimization" section. Not risk-based
-                                   # sizing (that was the previous default here) - a fixed lot, chosen because
-                                   # that's what was actually backtested and forward-test-approved.
+            fixed_lot_size = 0.1  # Restored 2026-09-14 after a brief, well-intentioned but mistaken revert
+                                   # to 0.05 by a concurrent session that (correctly, given what it could see)
+                                   # found no persisted evidence in the repo that 0.1 had ever been backtested.
+                                   # It had been - in an earlier chat, run_causal_backtest(fixed_lot_size=0.1)
+                                   # really was executed and showed real numbers - but that comparison was
+                                   # never saved to a script/file, so a session reading only the repo had no
+                                   # way to know. Now it is: see run_backtest_risk_capped.py's LOT_SIZES list
+                                   # and BACKTEST_REPORT.md's "Lot size comparison: 0.05 vs 0.1" section for
+                                   # the actual persisted numbers (177 trades either way, same 42.9% win rate
+                                   # /PF 3.01 - lot size doesn't change those ratios - but 0.1 nets $395.49
+                                   # vs $197.74 at 0.05, with max drawdown 8.44% vs 4.87%, still safely under
+                                   # the $10/day cap on every historical day). User's explicit, informed choice
+                                   # after seeing both numbers side by side. Not risk-based sizing (the
+                                   # original design here) - a fixed lot, because that's what was backtested.
             daily_profit_target_usd = 15.0
             enable_daily_profit_lock = False  # Deliberately off: every backtest in BACKTEST_REPORT.md let
                                                # winners run uncapped - only losses are capped (below). This
@@ -212,8 +234,8 @@ class LiveTradingEngine:
                 self.status["session_pnl"] = session_realized_pnl
                 self.status["balance"] = acc.balance
 
-                # Fetch M1 bars and reconstruct range bars
-                bars_dict = mt5_bridge.fetch_recent_bars(count=1000, timeframe_str="M1")
+                # Fetch M15 bars and reconstruct range bars (validated timeframe - see module docstring)
+                bars_dict = mt5_bridge.fetch_recent_bars(count=1000, timeframe_str="M15")
                 if not bars_dict or len(bars_dict["closes"]) < 100:
                     continue
 
@@ -239,7 +261,7 @@ class LiveTradingEngine:
                 cvd_s = calculate_cvd(rb_opens, rb_closes, rb_volumes)
                 atr_s = calculate_atr(rb_highs, rb_lows, rb_closes, params.atr_period)
 
-                # HTF trend using coarser range bars from the same M1 window
+                # HTF trend using coarser range bars from the same M15 window
                 htf_trend = "NEUTRAL"
                 try:
                     htf_bars = build_range_bars(

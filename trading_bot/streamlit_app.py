@@ -37,7 +37,6 @@ from trading_bot.backtest import run_causal_backtest
 from trading_bot.circuit_breakers import CircuitBreakerConfig, CircuitBreakerManager
 from trading_bot.storage import BotStorage
 from trading_bot.mt5_bridge import MT5Bridge
-from trading_bot.data_feed import generate_realistic_nasdaq_data
 from trading_bot.live_engine import get_engine
 
 
@@ -305,12 +304,15 @@ def main():
 
     st.sidebar.markdown("### ⚙️ Controls")
     st.sidebar.caption("Saved automatically — persists across restarts.")
+    st.sidebar.info("📊 **Timeframe: M15** — every tuned parameter below was searched and validated "
+                     "against M15 range bars (see `BACKTEST_REPORT.md`). The live engine and this "
+                     "dashboard both fetch M15 candles from MT5, not M1.")
     with st.sidebar.expander("Strategy Parameters", expanded=False):
-        range_size = st.number_input("Range Bar Size (points)", 5.0, 100.0, float(saved_strategy.get("range_size_points", 15.0)), 1.0)
+        range_size = st.number_input("Range Bar Size (points)", 5.0, 100.0, float(saved_strategy.get("range_size_points", 8.0)), 1.0)
         bin_size = st.number_input("Volume Profile Bin (points)", 1.0, 50.0, float(saved_strategy.get("profile_bin_size_points", 5.0)), 1.0)
         value_area = st.slider("Value Area %", 0.5, 0.9, float(saved_strategy.get("value_area_pct", 0.68)), 0.01)
-        vol_spike_mult = st.slider("Volume Spike Multiplier", 1.2, 4.0, float(saved_strategy.get("volume_spike_mult", 2.0)), 0.1)
-        rr_ratio = st.number_input("Squeeze Risk:Reward", 1.0, 5.0, float(saved_strategy.get("rr_ratio", 2.0)), 0.5)
+        vol_spike_mult = st.slider("Volume Spike Multiplier", 1.2, 4.0, float(saved_strategy.get("volume_spike_mult", 2.5)), 0.1)
+        rr_ratio = st.number_input("Squeeze Risk:Reward", 1.0, 5.0, float(saved_strategy.get("rr_ratio", 3.0)), 0.5)
         min_rr = st.number_input("Min R:R (AAA / Failed Auction)", 1.0, 5.0, float(saved_strategy.get("min_rr_ratio", 1.5)), 0.5)
         enable_htf = st.checkbox("Enable M15 HTF Trend Filter", value=bool(saved_strategy.get("enable_htf_filter", True)))
         enable_session = st.checkbox("Restrict to Session Window (NY Open)", value=bool(saved_strategy.get("enable_session_filter", True)))
@@ -329,7 +331,7 @@ def main():
         storage.set_setting("strategy_config", current_strategy_cfg)
 
     with st.sidebar.expander("Safety & Circuit Breakers", expanded=False):
-        max_daily_loss = st.number_input("Max Daily Loss ($)", 5.0, 1000.0, float(saved_safety.get("max_daily_loss_usd", 15.0)))
+        max_daily_loss = st.number_input("Max Daily Loss ($)", 5.0, 1000.0, float(saved_safety.get("max_daily_loss_usd", 10.0)))
         max_consec_losses = st.number_input("Max Consec Losses", 1, 10, int(saved_safety.get("max_consecutive_losses", 3)))
         magic_num = st.number_input("Magic Number", 100000, 9999999, int(saved_safety.get("magic_number", 9312001)))
     cb_manager.config.max_daily_loss_usd = max_daily_loss
@@ -341,7 +343,7 @@ def main():
 
     st.sidebar.button("🔄 Refresh Market Data", key="btn_refresh_market_data", use_container_width=True, on_click=st.rerun)
 
-    raw_bars = mt5_bridge.get_rates(count=1000)
+    raw_bars = mt5_bridge.get_rates(count=1000, timeframe_str="M15")  # matches live_engine.py's validated timeframe
     opens = [b.open for b in raw_bars]
     highs = [b.high for b in raw_bars]
     lows = [b.low for b in raw_bars]
@@ -409,17 +411,24 @@ def main():
                     st.caption("No active signal to trade right now.")
 
     with tab2:
-        st.caption("Zero-lookahead backtest on range bars reconstructed from M1 history. 75/25 In-Sample/Out-of-Sample split + Monte Carlo noise gate.")
-        bt_bars = st.slider("M1 Bars to Test", 2000, 40000, 8000, 1000, key="slider_bt_bars")
-        risk_usd = st.number_input("Risk per Trade ($)", 1.0, 100.0, 3.0, 1.0, key="bt_risk_usd")
+        st.caption("Zero-lookahead backtest on range bars reconstructed from **real MT5 M15 history** "
+                   "(matches the live engine's timeframe — not synthetic data, not M1). "
+                   "75/25 In-Sample/Out-of-Sample split + Monte Carlo noise gate.")
+        bt_bars = st.slider("M15 Bars to Test", 2000, 23000, 8000, 1000, key="slider_bt_bars",
+                             help="This broker's real M15 history for USTECm goes back ~11.7 months "
+                                  "(~23,000 M15 candles) - see BACKTEST_REPORT.md.")
+        bt_lot = st.number_input("Fixed Lot Size", 0.01, 5.0, 0.1, 0.01, key="bt_lot_size",
+                                  help="Matches the live engine's validated fixed-lot sizing, not risk-based.")
+        bt_daily_cap = st.number_input("Daily Loss Cap ($)", 1.0, 1000.0, 10.0, 1.0, key="bt_daily_cap")
         if st.button("▶️ Run Backtest & Gate Check", key="btn_run_full_backtest", type="primary"):
-            with st.spinner("Reconstructing range bars and running causal simulation..."):
-                bt_data = generate_realistic_nasdaq_data(num_bars=bt_bars, seed=101)
+            with st.spinner("Fetching real M15 history from MT5 and running causal simulation..."):
+                bt_data = mt5_bridge.fetch_recent_bars(count=bt_bars, timeframe_str="M15")
                 res = run_causal_backtest(
                     bt_data["opens"], bt_data["highs"], bt_data["lows"], bt_data["closes"],
                     bt_data["times"], bt_data["volumes"], params,
                     initial_balance=acc.balance or 100.0, split_ratio=0.75,
-                    spread_points=sym_info.spread_usd, risk_per_trade_usd=risk_usd,
+                    spread_points=sym_info.spread_usd, fixed_lot_size=bt_lot,
+                    daily_loss_cap_usd=bt_daily_cap,
                     volume_min=sym_info.volume_min, volume_max=sym_info.volume_max, volume_step=sym_info.volume_step,
                     num_noise_shuffles=50
                 )
@@ -427,7 +436,7 @@ def main():
 
         if "bt_result" in st.session_state:
             res = st.session_state.bt_result
-            st.caption(f"{res.num_range_bars} range bars reconstructed from {bt_bars} M1 bars.")
+            st.caption(f"{res.num_range_bars} range bars reconstructed from {bt_bars} real M15 candles.")
             c1, c2, c3 = st.columns(3)
             for col, m, title in [(c1, res.in_sample_metrics, "📘 In-Sample"), (c2, res.out_of_sample_metrics, "📙 Out-of-Sample"), (c3, res.overall_metrics, "🌐 Overall")]:
                 with col:

@@ -37,7 +37,8 @@ def run_live_auto_trading():
                 try:
                     print(line, flush=True)
                 except UnicodeEncodeError:
-                    pass
+                    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+                    print(line.encode(encoding, errors="replace").decode(encoding), flush=True)
             printed = len(lines)
         if engine.error:
             print(f"\n❌ Engine exited with error: {engine.error}", flush=True)

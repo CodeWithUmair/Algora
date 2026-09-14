@@ -46,6 +46,7 @@ trading_bot/
   run_backtest_timeframes.py  Multi-timeframe (M1-D1) real-data backtest runner (see BACKTEST_REPORT.md)
   run_backtest_risk_capped.py  $100-balance/fixed-lot/$10-daily-cap backtest runner (see BACKTEST_REPORT.md)
   optimize_parameters.py  Coordinate-descent parameter search on real M15 data (see BACKTEST_REPORT.md)
+  strategy_presets.py  Frozen snapshot of the best-validated config (reference/rollback point, not live-wired)
   streamlit_app.py     The dashboard
   tests/               Unit tests (run_tests.py)
 STRATEGY_SPECIFICATION.md   Mechanized rules, explicit limitations

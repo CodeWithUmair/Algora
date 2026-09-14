@@ -147,8 +147,8 @@ class MT5Bridge:
             trade_contract_size=info.trade_contract_size
         )
 
-    def get_rates(self, symbol: Optional[str] = None, count: int = 500) -> Any:
-        bars_dict = self.fetch_recent_bars(symbol=symbol, count=count)
+    def get_rates(self, symbol: Optional[str] = None, count: int = 500, timeframe_str: str = "M1") -> Any:
+        bars_dict = self.fetch_recent_bars(symbol=symbol, count=count, timeframe_str=timeframe_str)
 
         class BarObj:
             def __init__(self, time_val, o, h, l, c, v):
