@@ -28,6 +28,8 @@ run_backtest_risk_capped.py, so this optimizes what the bot would actually run.
 
 Usage: python trading_bot/optimize_parameters.py
 """
+import utils.transport
+import utils.session
 import json
 import os
 import sys
