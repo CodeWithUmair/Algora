@@ -6,6 +6,9 @@ nasdaq_trades_*.csv
 # News calendar cache (runtime, refetched every 30 min - not shared)
 .news_calendar_cache.json
 
+# Streamlit process output when launched headless (runtime, not shared)
+streamlit_output.log
+
 # Python
 __pycache__/
 *.pyc

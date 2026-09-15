@@ -371,9 +371,9 @@ def main():
         else:
             st.markdown(f'<div class="setup-head">Latest Range Bar · ${signal.close_price:,.2f}</div>', unsafe_allow_html=True)
             chips = "".join([
-                _chip(f"VAL ${signal.val:,.0f}", "chip-model"),
-                _chip(f"VAH ${signal.vah:,.0f}", "chip-model"),
-                _chip(f"POC ${signal.poc:,.0f}", "chip-model"),
+                _chip(f"VAL \\${signal.val:,.0f}", "chip-model"),
+                _chip(f"VAH \\${signal.vah:,.0f}", "chip-model"),
+                _chip(f"POC \\${signal.poc:,.0f}", "chip-model"),
                 _chip(f"CVD {signal.cvd:+,.0f}", "chip-model"),
             ])
             st.markdown(chips, unsafe_allow_html=True)
@@ -382,7 +382,7 @@ def main():
                 cls = "chip-pass" if signal.direction == "BUY" else "chip-fail"
                 st.success(
                     f"🎯 **{signal.model} · {signal.direction}** — {signal.reason}\n\n"
-                    f"Entry ${signal.suggested_entry:,.2f} · SL ${signal.suggested_sl:,.2f} · TP ${signal.suggested_tp:,.2f} "
+                    f"Entry \\${signal.suggested_entry:,.2f} · SL \\${signal.suggested_sl:,.2f} · TP \\${signal.suggested_tp:,.2f} "
                     f"(R:R {signal.reward_points/signal.risk_points:.2f})" if signal.risk_points else ""
                 )
             else:
