@@ -38,6 +38,8 @@ from trading_bot.circuit_breakers import CircuitBreakerConfig, CircuitBreakerMan
 from trading_bot.storage import BotStorage
 from trading_bot.mt5_bridge import MT5Bridge
 from trading_bot.live_engine import get_engine
+from trading_bot.gold_live_engine import get_gold_engine
+from trading_bot.gold_strategy import GoldStrategyParameters, eval_gold_signal
 
 
 # ============================================================================
@@ -116,42 +118,53 @@ def _chip(label: str, cls: str = "chip-pass") -> str:
 
 
 @st.fragment(run_every=5) if st is not None else (lambda f: f)
-def _render_header(mt5_bridge, engine, cb_manager):
-    hc1, hc2, hc3 = st.columns([4, 1.5, 1.5])
+def _render_header(mt5_bridge, engine, gold_engine, cb_manager):
+    hc1, hc2, hc3 = st.columns([3.5, 2, 2.5])
     with hc1:
         st.markdown(
-            '<div class="app-title">📈 NASDAQ-100 Order-Flow Scalper</div>'
-            '<span class="app-sub">Range Bars · Volume Profile · CVD · AAA / Squeeze / Failed-Auction</span>',
+            '<div class="app-title">⚡ Multi-Symbol Algorithmic Scalper</div>'
+            '<span class="app-sub">NASDAQ-100 (Order-Flow) & Gold XAU/USD (Fib Pivots + EMA9)</span>',
             unsafe_allow_html=True
         )
     with hc2:
+        st.markdown("**NASDAQ Bot**", unsafe_allow_html=True)
         st.markdown(_status_pill(engine), unsafe_allow_html=True)
-    with hc3:
         if engine.is_running():
-            if st.button("⏹ Stop Bot", key="btn_stop_engine_top", use_container_width=True):
-                ok_stop, msg_stop = engine.stop()
-                st.toast(msg_stop)
+            if st.button("⏹ Stop NASDAQ", key="btn_stop_nasdaq", use_container_width=True):
+                engine.stop()
                 st.rerun()
         else:
-            if st.button("▶ Start Bot", key="btn_start_engine_top", use_container_width=True, type="primary"):
-                ok_start, msg_start = engine.start()
-                st.toast(msg_start)
+            if st.button("▶ Start NASDAQ", key="btn_start_nasdaq", use_container_width=True, type="primary"):
+                engine.start()
+                st.rerun()
+    with hc3:
+        st.markdown("**GOLD Bot**", unsafe_allow_html=True)
+        st.markdown(_status_pill(gold_engine), unsafe_allow_html=True)
+        if gold_engine.is_running():
+            if st.button("⏹ Stop GOLD", key="btn_stop_gold", use_container_width=True):
+                gold_engine.stop()
+                st.rerun()
+        else:
+            if st.button("▶ Start GOLD", key="btn_start_gold", use_container_width=True, type="primary"):
+                gold_engine.start()
                 st.rerun()
 
     if engine.error:
-        st.error(f"Engine error: {engine.error}")
+        st.error(f"NASDAQ Engine error: {engine.error}")
+    if gold_engine.error:
+        st.error(f"GOLD Engine error: {gold_engine.error}")
 
     acc = mt5_bridge.get_account_info()
     sym_info = mt5_bridge.get_symbol_info()
     today_pnl = engine.status.get("today_pnl") if engine.status.get("last_update") else cb_manager.state.daily_pnl_usd
 
     m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("Account", acc.trade_mode, "Demo" if acc.is_demo else "LIVE — blocked")
-    m2.metric("Balance", f"${acc.balance:,.2f}")
-    m3.metric(mt5_bridge.symbol, f"${sym_info.bid:,.2f}", f"spread ${sym_info.spread_usd:.2f}")
-    m4.metric("Today P&L", f"${today_pnl:+,.2f}")
-    m5.metric("Positions", engine.status.get("open_positions", 0))
-    m6.metric("Last Model", engine.status.get("last_model") or "—")
+    m1.metric("Account", acc.trade_mode if acc else "—", "Demo" if (acc and acc.is_demo) else "LIVE — blocked")
+    m2.metric("Balance", f"${acc.balance:,.2f}" if acc else "—")
+    m3.metric(mt5_bridge.symbol, f"${sym_info.bid:,.2f}" if sym_info else "—", f"spread ${sym_info.spread_usd:.2f}" if sym_info else "—")
+    m4.metric("NASDAQ P&L", f"${today_pnl:+,.2f}")
+    m5.metric("NASDAQ Pos", engine.status.get("open_positions", 0))
+    m6.metric("GOLD Pos", gold_engine.status.get("open_positions", 0))
 
     return acc, sym_info
 
@@ -162,7 +175,7 @@ def _render_trade_history(storage, magic_num):
         f"Store: `{storage.db_path}`  ·  Magic #{magic_num}  ·  "
         "a row appears the moment the engine opens a position; exit price & P&L fill in on close."
     )
-    raw_trades = storage.get_all_trades(1000)
+    raw_trades = storage.get_all_trades(1000, magic_number=magic_num)
     if not raw_trades:
         st.info("No trades recorded yet. Start the Auto-Bot, or use Manual Override, to see history here.")
         return
@@ -247,13 +260,13 @@ def _render_trade_history(storage, magic_num):
 
     st.download_button(
         "⬇️ Download CSV", data=df.to_csv(index=False).encode("utf-8"),
-        file_name=f"nasdaq_trades_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.csv",
-        mime="text/csv", key="btn_download_trades",
+        file_name=f"trades_{magic_num}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv", key=f"btn_download_trades_{magic_num}",
     )
 
 
 @st.fragment(run_every=5) if st is not None else (lambda f: f)
-def _render_engine_live(engine):
+def _render_engine_live(engine, key_prefix: str = "nasdaq"):
     if engine.status.get("last_update"):
         d1, d2, d3, d4, d5 = st.columns(5)
         d1.metric("Price", f"${engine.status.get('last_price', 0.0):,.2f}")
@@ -272,7 +285,7 @@ def _render_engine_live(engine):
     st.markdown("**Live log**")
     log_text = "\n".join(engine.log_lines) if engine.log_lines else "(no log lines yet — press Start)"
     st.text_area("Engine log", value=log_text, height=380, disabled=True,
-                 key="engine_log_area", label_visibility="collapsed")
+                 key=f"engine_log_area_{key_prefix}", label_visibility="collapsed")
 
 
 def main():
@@ -297,7 +310,8 @@ def main():
     mt5_bridge = st.session_state.mt5_bridge
 
     engine = get_engine(symbol="USTECm", db_path=DB_PATH)
-    acc, sym_info = _render_header(mt5_bridge, engine, cb_manager)
+    gold_engine = get_gold_engine(symbol="XAUUSDm", db_path=DB_PATH)
+    acc, sym_info = _render_header(mt5_bridge, engine, gold_engine, cb_manager)
 
     saved_strategy = storage.get_setting("strategy_config", {}) or {}
     saved_safety = storage.get_setting("safety_config", {}) or {}
@@ -351,132 +365,176 @@ def main():
     times = [b.time for b in raw_bars]
     volumes = [b.tick_volume for b in raw_bars]
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Live Signal", "📊 Backtest", "📈 Volume Profile", "📜 History", "🤖 Engine"])
+    main_tab_nasdaq, main_tab_gold = st.tabs(["📈 NASDAQ-100 (Order-Flow)", "🥇 Gold XAU/USD (Fib Pivots + EMA9)"])
 
-    range_bars = build_range_bars(opens, highs, lows, closes, times, volumes, params.range_size_points)
-    signal = None
-    if len(range_bars) >= 60:
-        rb_highs = [b.high for b in range_bars]; rb_lows = [b.low for b in range_bars]
-        rb_closes = [b.close for b in range_bars]; rb_opens = [b.open for b in range_bars]
-        rb_volumes = [b.volume for b in range_bars]; rb_times = [b.time for b in range_bars]
-        val_s, vah_s, poc_s = calculate_volume_profile(rb_highs, rb_lows, rb_volumes, rb_times, params.profile_bin_size_points, params.value_area_pct)
-        cvd_s = calculate_cvd(rb_opens, rb_closes, rb_volumes)
-        atr_s = calculate_atr(rb_highs, rb_lows, rb_closes, params.atr_period)
-        idx = len(range_bars) - 1
-        signal = evaluate_signal_at_bar(range_bars, val_s, vah_s, poc_s, cvd_s, atr_s, idx, params)
+    with main_tab_nasdaq:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Live Signal", "📊 Backtest", "📈 Volume Profile", "📜 History", "🤖 Engine"])
 
-    with tab1:
-        if signal is None:
-            st.info("Not enough range bars formed yet from the live feed - waiting for more data.")
-        else:
-            st.markdown(f'<div class="setup-head">Latest Range Bar · ${signal.close_price:,.2f}</div>', unsafe_allow_html=True)
-            chips = "".join([
-                _chip(f"VAL \\${signal.val:,.0f}", "chip-model"),
-                _chip(f"VAH \\${signal.vah:,.0f}", "chip-model"),
-                _chip(f"POC \\${signal.poc:,.0f}", "chip-model"),
-                _chip(f"CVD {signal.cvd:+,.0f}", "chip-model"),
-            ])
-            st.markdown(chips, unsafe_allow_html=True)
+        range_bars = build_range_bars(opens, highs, lows, closes, times, volumes, params.range_size_points)
+        signal = None
+        if len(range_bars) >= 60:
+            rb_highs = [b.high for b in range_bars]; rb_lows = [b.low for b in range_bars]
+            rb_closes = [b.close for b in range_bars]; rb_opens = [b.open for b in range_bars]
+            rb_volumes = [b.volume for b in range_bars]; rb_times = [b.time for b in range_bars]
+            val_s, vah_s, poc_s = calculate_volume_profile(rb_highs, rb_lows, rb_volumes, rb_times, params.profile_bin_size_points, params.value_area_pct)
+            cvd_s = calculate_cvd(rb_opens, rb_closes, rb_volumes)
+            atr_s = calculate_atr(rb_highs, rb_lows, rb_closes, params.atr_period)
+            idx = len(range_bars) - 1
+            signal = evaluate_signal_at_bar(range_bars, val_s, vah_s, poc_s, cvd_s, atr_s, idx, params)
 
-            if signal.all_passed:
-                cls = "chip-pass" if signal.direction == "BUY" else "chip-fail"
-                st.success(
-                    f"🎯 **{signal.model} · {signal.direction}** — {signal.reason}\n\n"
-                    f"Entry \\${signal.suggested_entry:,.2f} · SL \\${signal.suggested_sl:,.2f} · TP \\${signal.suggested_tp:,.2f} "
-                    f"(R:R {signal.reward_points/signal.risk_points:.2f})" if signal.risk_points else ""
-                )
+        with tab1:
+            if signal is None:
+                st.info("Not enough range bars formed yet from the live feed - waiting for more data.")
             else:
-                st.caption("No playbook triggered on the latest closed range bar.")
+                st.markdown(f'<div class="setup-head">Latest Range Bar · ${signal.close_price:,.2f}</div>', unsafe_allow_html=True)
+                chips = "".join([
+                    _chip(f"VAL \\${signal.val:,.0f}", "chip-model"),
+                    _chip(f"VAH \\${signal.vah:,.0f}", "chip-model"),
+                    _chip(f"POC \\${signal.poc:,.0f}", "chip-model"),
+                    _chip(f"CVD {signal.cvd:+,.0f}", "chip-model"),
+                ])
+                st.markdown(chips, unsafe_allow_html=True)
 
-            with st.expander("⚡ Manual Order Override", expanded=False):
-                st.caption("Places a one-off order at the current signal's SL/TP, independent of the Auto-Bot toggle above.")
                 if signal.all_passed:
-                    if st.button(f"🚀 {signal.direction} Now ({signal.model})", key="btn_manual_order", type="primary"):
-                        ok, ticket, msg = mt5_bridge.send_order(
-                            direction=signal.direction, volume=sym_info.volume_min,
-                            sl_price=signal.suggested_sl, tp_price=signal.suggested_tp,
-                            magic_number=magic_num, comment=f"Manual_{signal.model}"
-                        )
-                        if ok:
-                            st.success(msg)
-                            storage.record_trade({
-                                "order_id": ticket, "direction": signal.direction, "model": signal.model,
-                                "volume": sym_info.volume_min, "entry_price": signal.close_price,
-                                "sl": signal.suggested_sl, "tp": signal.suggested_tp, "status": "OPEN",
-                                "opened_at": datetime.now(timezone.utc).isoformat(),
-                            })
-                        else:
-                            st.error(msg)
+                    cls = "chip-pass" if signal.direction == "BUY" else "chip-fail"
+                    st.success(
+                        f"🎯 **{signal.model} · {signal.direction}** — {signal.reason}\n\n"
+                        f"Entry \\${signal.suggested_entry:,.2f} · SL \\${signal.suggested_sl:,.2f} · TP \\${signal.suggested_tp:,.2f} "
+                        f"(R:R {signal.reward_points/signal.risk_points:.2f})" if signal.risk_points else ""
+                    )
                 else:
-                    st.caption("No active signal to trade right now.")
+                    st.caption("No playbook triggered on the latest closed range bar.")
 
-    with tab2:
-        st.caption("Zero-lookahead backtest on range bars reconstructed from **real MT5 M15 history** "
-                   "(matches the live engine's timeframe — not synthetic data, not M1). "
-                   "75/25 In-Sample/Out-of-Sample split + Monte Carlo noise gate.")
-        bt_bars = st.slider("M15 Bars to Test", 2000, 23000, 8000, 1000, key="slider_bt_bars",
-                             help="This broker's real M15 history for USTECm goes back ~11.7 months "
-                                  "(~23,000 M15 candles) - see BACKTEST_REPORT.md.")
-        bt_lot = st.number_input("Fixed Lot Size", 0.01, 5.0, 0.1, 0.01, key="bt_lot_size",
-                                  help="Matches the live engine's validated fixed-lot sizing, not risk-based.")
-        bt_daily_cap = st.number_input("Daily Loss Cap ($)", 1.0, 1000.0, 10.0, 1.0, key="bt_daily_cap")
-        if st.button("▶️ Run Backtest & Gate Check", key="btn_run_full_backtest", type="primary"):
-            with st.spinner("Fetching real M15 history from MT5 and running causal simulation..."):
-                bt_data = mt5_bridge.fetch_recent_bars(count=bt_bars, timeframe_str="M15")
-                res = run_causal_backtest(
-                    bt_data["opens"], bt_data["highs"], bt_data["lows"], bt_data["closes"],
-                    bt_data["times"], bt_data["volumes"], params,
-                    initial_balance=acc.balance or 100.0, split_ratio=0.75,
-                    spread_points=sym_info.spread_usd, fixed_lot_size=bt_lot,
-                    daily_loss_cap_usd=bt_daily_cap,
-                    volume_min=sym_info.volume_min, volume_max=sym_info.volume_max, volume_step=sym_info.volume_step,
-                    num_noise_shuffles=50
-                )
-                st.session_state.bt_result = res
+                with st.expander("⚡ Manual Order Override", expanded=False):
+                    st.caption("Places a one-off order at the current signal's SL/TP, independent of the Auto-Bot toggle above.")
+                    if signal.all_passed:
+                        if st.button(f"🚀 {signal.direction} Now ({signal.model})", key="btn_manual_order", type="primary"):
+                            ok, ticket, msg = mt5_bridge.send_order(
+                                direction=signal.direction, volume=sym_info.volume_min if sym_info else 0.05,
+                                sl_price=signal.suggested_sl, tp_price=signal.suggested_tp,
+                                magic_number=magic_num, comment=f"Manual_{signal.model}"
+                            )
+                            if ok:
+                                st.success(msg)
+                                storage.record_trade({
+                                    "order_id": ticket, "direction": signal.direction, "model": signal.model,
+                                    "volume": sym_info.volume_min if sym_info else 0.05, "entry_price": signal.close_price,
+                                    "sl": signal.suggested_sl, "tp": signal.suggested_tp, "status": "OPEN",
+                                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                                })
+                            else:
+                                st.error(msg)
+                    else:
+                        st.caption("No active signal to trade right now.")
 
-        if "bt_result" in st.session_state:
-            res = st.session_state.bt_result
-            st.caption(f"{res.num_range_bars} range bars reconstructed from {bt_bars} real M15 candles.")
-            c1, c2, c3 = st.columns(3)
-            for col, m, title in [(c1, res.in_sample_metrics, "📘 In-Sample"), (c2, res.out_of_sample_metrics, "📙 Out-of-Sample"), (c3, res.overall_metrics, "🌐 Overall")]:
-                with col:
-                    st.markdown(f"**{title}**")
-                    st.metric("Trades", m.total_trades)
-                    st.metric("Win Rate", f"{m.win_rate_pct:.1f}%")
-                    st.metric("Profit Factor", m.profit_factor)
-                    st.metric("Expectancy (R)", f"{m.expectancy_r:+.2f}R")
-                    st.metric("Net PnL", f"${m.total_net_pnl_usd:+,.2f}")
-                    st.metric("Max Drawdown", f"${m.max_drawdown_usd:,.2f} ({m.max_drawdown_pct:.1f}%)")
-            m_all = res.overall_metrics
-            if m_all.noise_gate_passed:
-                st.success(f"🎉 Passed the noise gate (p = {m_all.noise_p_value:.4f} ≤ 0.05, Z = {m_all.z_score:.2f})")
+        with tab2:
+            st.caption("Zero-lookahead backtest on range bars reconstructed from **real MT5 M15 history** "
+                       "(matches the live engine's timeframe — not synthetic data, not M1). "
+                       "75/25 In-Sample/Out-of-Sample split + Monte Carlo noise gate.")
+            bt_bars = st.slider("M15 Bars to Test", 2000, 23000, 8000, 1000, key="slider_bt_bars",
+                                 help="This broker's real M15 history for USTECm goes back ~11.7 months "
+                                      "(~23,000 M15 candles) - see BACKTEST_REPORT.md.")
+            bt_lot = st.number_input("Fixed Lot Size", 0.01, 5.0, 0.1, 0.01, key="bt_lot_size",
+                                      help="Matches the live engine's validated fixed-lot sizing, not risk-based.")
+            bt_daily_cap = st.number_input("Daily Loss Cap ($)", 1.0, 1000.0, 10.0, 1.0, key="bt_daily_cap")
+            if st.button("▶️ Run Backtest & Gate Check", key="btn_run_full_backtest", type="primary"):
+                with st.spinner("Fetching real M15 history from MT5 and running causal simulation..."):
+                    bt_data = mt5_bridge.fetch_recent_bars(count=bt_bars, timeframe_str="M15")
+                    res = run_causal_backtest(
+                        bt_data["opens"], bt_data["highs"], bt_data["lows"], bt_data["closes"],
+                        bt_data["times"], bt_data["volumes"], params,
+                        initial_balance=acc.balance if acc else 100.0, split_ratio=0.75,
+                        spread_points=sym_info.spread_usd if sym_info else 1.0, fixed_lot_size=bt_lot,
+                        daily_loss_cap_usd=bt_daily_cap,
+                        volume_min=sym_info.volume_min if sym_info else 0.05, volume_max=sym_info.volume_max if sym_info else 100.0, volume_step=sym_info.volume_step if sym_info else 0.01,
+                        num_noise_shuffles=50
+                    )
+                    st.session_state.bt_result = res
+
+            if "bt_result" in st.session_state:
+                res = st.session_state.bt_result
+                st.caption(f"{res.num_range_bars} range bars reconstructed from {bt_bars} real M15 candles.")
+                c1, c2, c3 = st.columns(3)
+                for col, m, title in [(c1, res.in_sample_metrics, "📘 In-Sample"), (c2, res.out_of_sample_metrics, "📙 Out-of-Sample"), (c3, res.overall_metrics, "🌐 Overall")]:
+                    with col:
+                        st.markdown(f"**{title}**")
+                        st.metric("Trades", m.total_trades)
+                        st.metric("Win Rate", f"{m.win_rate_pct:.1f}%")
+                        st.metric("Profit Factor", m.profit_factor)
+                        st.metric("Expectancy (R)", f"{m.expectancy_r:+.2f}R")
+                        st.metric("Net PnL", f"${m.total_net_pnl_usd:+,.2f}")
+                        st.metric("Max Drawdown", f"${m.max_drawdown_usd:,.2f} ({m.max_drawdown_pct:.1f}%)")
+                m_all = res.overall_metrics
+                if m_all.noise_gate_passed:
+                    st.success(f"🎉 Passed the noise gate (p = {m_all.noise_p_value:.4f} ≤ 0.05, Z = {m_all.z_score:.2f})")
+                else:
+                    st.error(f"🛑 Failed the noise gate (p = {m_all.noise_p_value:.4f} > 0.05) — edge not distinguishable from noise.")
+
+        with tab3:
+            st.caption("Session Volume Profile computed on the reconstructed range-bar series.")
+            if signal is not None:
+                i1, i2, i3, i4 = st.columns(4)
+                i1.metric("VAL", f"${signal.val:,.1f}")
+                i2.metric("VAH", f"${signal.vah:,.1f}")
+                i3.metric("POC", f"${signal.poc:,.1f}")
+                i4.metric("CVD", f"{signal.cvd:+,.0f}")
+                chart_df = pd.DataFrame({"close": rb_closes[-200:]})
+                st.line_chart(chart_df, height=280)
             else:
-                st.error(f"🛑 Failed the noise gate (p = {m_all.noise_p_value:.4f} > 0.05) — edge not distinguishable from noise.")
+                st.info("Not enough data yet.")
 
-    with tab3:
-        st.caption("Session Volume Profile computed on the reconstructed range-bar series.")
-        if signal is not None:
-            i1, i2, i3, i4 = st.columns(4)
-            i1.metric("VAL", f"${signal.val:,.1f}")
-            i2.metric("VAH", f"${signal.vah:,.1f}")
-            i3.metric("POC", f"${signal.poc:,.1f}")
-            i4.metric("CVD", f"{signal.cvd:+,.0f}")
-            chart_df = pd.DataFrame({"close": rb_closes[-200:]})
-            st.line_chart(chart_df, height=280)
-        else:
-            st.info("Not enough data yet.")
+        with tab4:
+            _render_trade_history(storage, magic_num)
 
-    with tab4:
-        _render_trade_history(storage, magic_num)
+        with tab5:
+            if engine.is_running() and engine.started_at:
+                st.caption(f"Running since {engine.started_at.strftime('%H:%M:%S')} UTC")
+            elif engine.error:
+                st.caption(f"⚠️ Last error: {engine.error}")
+            else:
+                st.caption("Stopped — use ▶ Start NASDAQ at the top of the page to begin trading.")
+            _render_engine_live(engine, key_prefix="nasdaq")
 
-    with tab5:
-        if engine.is_running() and engine.started_at:
-            st.caption(f"Running since {engine.started_at.strftime('%H:%M:%S')} UTC")
-        elif engine.error:
-            st.caption(f"⚠️ Last error: {engine.error}")
-        else:
-            st.caption("Stopped — use ▶ Start Bot at the top of the page to begin trading.")
-        _render_engine_live(engine)
+    with main_tab_gold:
+        gtab1, gtab2, gtab3 = st.tabs(["📋 Live Signal & Pivots", "📜 Gold History", "🤖 Gold Engine"])
+
+        with gtab1:
+            st.markdown("### 🥇 XAU/USD Gold Fibonacci Pivot + EMA 9 Scalper")
+            st.caption("Mechanized Daily Fib Pivots (PP, R1-R3, S1-S3) + EMA 9 Crossover + Whipsaw Guard (3 pips buffer, 5 bars cooldown).")
+
+            gold_df = mt5_bridge.fetch_recent_dataframe(count=500, timeframe_str="M5", symbol="XAUUSDm")
+            if not gold_df.empty:
+                gold_params = GoldStrategyParameters()
+                gold_sig, _ = eval_gold_signal(gold_df, gold_params)
+
+                gc1, gc2, gc3, gc4 = st.columns(4)
+                gc1.metric("Gold Price", f"${gold_sig.close_price:,.2f}")
+                gc2.metric("EMA 9", f"${gold_sig.ema9_val:,.2f}")
+                gc3.metric("Pivot PP", f"${gold_sig.pivots.pp:,.2f}" if gold_sig.pivots else "—")
+                gc4.metric("R1 / S1", f"${gold_sig.pivots.r1:,.2f} / ${gold_sig.pivots.s1:,.2f}" if gold_sig.pivots else "—")
+
+                if gold_sig.signal_type in ["BUY", "SELL"]:
+                    cls = "chip-pass" if gold_sig.signal_type == "BUY" else "chip-fail"
+                    st.success(
+                        f"🎯 **GOLD {gold_sig.signal_type} SIGNAL ({gold_sig.trigger_level})** — {gold_sig.reason}\n\n"
+                        f"Entry \\${gold_sig.suggested_entry:,.2f} · SL \\${gold_sig.suggested_sl:,.2f} · TP \\${gold_sig.suggested_tp:,.2f}"
+                    )
+                else:
+                    st.info(f"Current Signal: **NONE** — {gold_sig.reason}")
+            else:
+                st.warning("Unable to fetch live M5 Gold bars from MT5 bridge.")
+
+        with gtab2:
+            _render_trade_history(storage, 9212001)
+
+        with gtab3:
+            if gold_engine.is_running() and gold_engine.started_at:
+                st.caption(f"Gold Engine running since {gold_engine.started_at.strftime('%H:%M:%S')} UTC")
+            elif gold_engine.error:
+                st.caption(f"⚠️ Last error: {gold_engine.error}")
+            else:
+                st.caption("Gold Engine Stopped — use ▶ Start GOLD at the top of the page to begin trading.")
+            _render_engine_live(gold_engine, key_prefix="gold")
 
 
 if __name__ == "__main__":

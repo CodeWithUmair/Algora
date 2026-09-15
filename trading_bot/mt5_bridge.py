@@ -189,6 +189,20 @@ class MT5Bridge:
             "volumes": [float(r['tick_volume']) for r in rates],
         }
 
+    def fetch_recent_dataframe(self, symbol: Optional[str] = None, count: int = 500, timeframe_str: str = "M5") -> pd.DataFrame:
+        bars = self.fetch_recent_bars(symbol=symbol, count=count, timeframe_str=timeframe_str)
+        if not bars or not bars.get("closes"):
+            return pd.DataFrame()
+        import pandas as pd
+        return pd.DataFrame({
+            "time": bars["times"],
+            "open": bars["opens"],
+            "high": bars["highs"],
+            "low": bars["lows"],
+            "close": bars["closes"],
+            "volume": bars["volumes"],
+        })
+
     def fetch_htf_bars(self, symbol: Optional[str] = None, count: int = 100, timeframe: str = "M15") -> Dict[str, List]:
         return self.fetch_recent_bars(symbol=symbol, count=count, timeframe_str=timeframe)
 
@@ -196,12 +210,14 @@ class MT5Bridge:
         self, direction: str, volume: float,
         stop_loss: Optional[float] = None, take_profit: Optional[float] = None,
         sl_price: Optional[float] = None, tp_price: Optional[float] = None,
-        magic_number: Optional[int] = None, comment: str = "NasdaqOrderFlow"
+        symbol: Optional[str] = None, magic_number: Optional[int] = None,
+        magic: Optional[int] = None, comment: str = "OrderFlow"
     ) -> Tuple[bool, int, str]:
         try:
+            sym = symbol or self.symbol
             sl = stop_loss if stop_loss is not None else (sl_price or 0.0)
             tp = take_profit if take_profit is not None else (tp_price or 0.0)
-            magic = magic_number if magic_number is not None else self.magic_number
+            mag = magic_number if magic_number is not None else (magic if magic is not None else self.magic_number)
 
             acc = self.get_account_info()
             if not acc.is_demo:
@@ -209,7 +225,7 @@ class MT5Bridge:
             if not self.is_algo_trading_enabled():
                 return False, 0, "ORDER REFUSED: AlgoTrading is disabled in MetaTrader5."
 
-            sym_info = self.get_symbol_info()
+            sym_info = self.get_symbol_info(sym)
 
             if self.is_simulation or not MT5_AVAILABLE or not self.is_connected:
                 self.ticket_counter += 1
@@ -218,7 +234,8 @@ class MT5Bridge:
                 self.sim_positions[ticket] = {
                     "ticket": ticket, "direction": direction, "volume": volume,
                     "entry_price": fill_price, "stop_loss": round(sl, 2), "take_profit": round(tp, 2),
-                    "open_time": datetime.now(timezone.utc).isoformat(), "magic": magic, "comment": comment
+                    "open_time": datetime.now(timezone.utc).isoformat(), "magic": mag, "comment": comment,
+                    "symbol": sym
                 }
                 return True, ticket, f"Simulated {direction} order {ticket} filled at ${fill_price:.2f} (SL: ${sl:.2f}, TP: ${tp:.2f})"
 
@@ -228,7 +245,7 @@ class MT5Bridge:
             tp_rounded = round(tp, sym_info.digits) if tp > 0 else 0.0
 
             filling_mode = mt5.ORDER_FILLING_IOC
-            raw_sym = mt5.symbol_info(self.symbol)
+            raw_sym = mt5.symbol_info(sym)
             if raw_sym and hasattr(raw_sym, "filling_mode"):
                 if raw_sym.filling_mode & 1:
                     filling_mode = mt5.ORDER_FILLING_FOK
@@ -238,9 +255,9 @@ class MT5Bridge:
                     filling_mode = mt5.ORDER_FILLING_RETURN
 
             request = {
-                "action": mt5.TRADE_ACTION_DEAL, "symbol": self.symbol, "volume": float(volume),
+                "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": float(volume),
                 "type": order_type, "price": float(price), "sl": float(sl_rounded), "tp": float(tp_rounded),
-                "deviation": 20, "magic": int(magic), "comment": comment,
+                "deviation": 20, "magic": int(mag), "comment": comment,
                 "type_time": mt5.ORDER_TIME_GTC, "type_filling": filling_mode,
             }
             result = mt5.order_send(request)
@@ -252,20 +269,26 @@ class MT5Bridge:
         except Exception as e:
             return False, 0, f"Order dispatch exception: {str(e)}"
 
-    def get_open_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_open_positions(self, symbol: Optional[str] = None, magic_number: Optional[int] = None) -> List[Dict[str, Any]]:
         sym = symbol or self.symbol
         if self.is_simulation or not MT5_AVAILABLE or not self.is_connected:
-            return list(self.sim_positions.values())
+            res = list(self.sim_positions.values())
+            if magic_number is not None:
+                res = [p for p in res if p.get("magic") == magic_number]
+            return res
         positions = mt5.positions_get(symbol=sym)
         if positions is None:
             return []
-        return [{
+        res = [{
             "ticket": pos.ticket, "symbol": pos.symbol,
             "direction": "BUY" if pos.type == mt5.ORDER_TYPE_BUY else "SELL",
             "volume": pos.volume, "entry_price": pos.price_open, "current_price": pos.price_current,
             "sl": pos.sl, "tp": pos.tp, "profit": pos.profit, "magic": pos.magic, "comment": pos.comment,
             "open_time": datetime.fromtimestamp(pos.time, tz=timezone.utc).isoformat()
         } for pos in positions]
+        if magic_number is not None:
+            res = [p for p in res if p.get("magic") == magic_number]
+        return res
 
     def get_closed_deals(self, from_timestamp: int) -> List[Dict[str, Any]]:
         if self.is_simulation or not MT5_AVAILABLE or not self.is_connected:

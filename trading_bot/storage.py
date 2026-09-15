@@ -75,10 +75,13 @@ class BotStorage:
 
             conn.commit()
 
-            # Migration: add `model` column to trades tables created before it existed.
+            # Migration: add `model` and `symbol` columns to trades tables created before they existed.
             cols = [r[1] for r in cursor.execute("PRAGMA table_info(trades)").fetchall()]
             if "model" not in cols:
                 cursor.execute("ALTER TABLE trades ADD COLUMN model TEXT")
+                conn.commit()
+            if "symbol" not in cols:
+                cursor.execute("ALTER TABLE trades ADD COLUMN symbol TEXT")
                 conn.commit()
 
     def save_trade(self, trade_data: Dict[str, Any]) -> int:
@@ -88,15 +91,16 @@ class BotStorage:
             now = datetime.now(timezone.utc).isoformat()
             cursor.execute("""
                 INSERT INTO trades (
-                    ticket, direction, model, entry_time, entry_price, stop_loss, take_profit,
+                    ticket, direction, model, symbol, entry_time, entry_price, stop_loss, take_profit,
                     lot_size, exit_time, exit_price, exit_reason, net_pnl_usd,
                     pnl_r_multiple, spread_paid_usd, commission_paid_usd,
                     is_demo, magic_number, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 trade_data.get("ticket") or trade_data.get("order_id"),
                 trade_data.get("direction"),
                 trade_data.get("model"),
+                trade_data.get("symbol"),
                 trade_data.get("entry_time") or trade_data.get("opened_at", now),
                 trade_data.get("entry_price"),
                 trade_data.get("stop_loss") or trade_data.get("sl"),
@@ -132,11 +136,14 @@ class BotStorage:
             """, (exit_price, net_pnl, exit_reason, now, ticket))
             conn.commit()
 
-    def get_all_trades(self, limit: int = 200) -> List[Dict[str, Any]]:
-        """Retrieves recent trades sorted newest first."""
+    def get_all_trades(self, limit: int = 200, magic_number: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Retrieves recent trades sorted newest first, optionally filtered by magic_number."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
+            if magic_number is not None:
+                cursor.execute("SELECT * FROM trades WHERE magic_number = ? ORDER BY id DESC LIMIT ?", (magic_number, limit))
+            else:
+                cursor.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
             return [dict(row) for row in cursor.fetchall()]
 
     def set_setting(self, key: str, value: Any):
