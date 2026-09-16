@@ -31,44 +31,39 @@ class TestGoldStrategy(unittest.TestCase):
 
     def test_buy_signal_crossover(self):
         # Create dummy 2-day M5 dataframe
-        dates = []
         base_time = datetime(2026, 9, 14, 0, 0)
-        # Day 1: 50 bars around 2650 (High 2700, Low 2600, Close 2650)
         times = [base_time + timedelta(minutes=5*i) for i in range(50)]
         closes = [2650.0] * 50
         closes[10] = 2700.0 # High
         closes[20] = 2600.0 # Low
         closes[49] = 2650.0 # Close
 
-        # Day 2: 10 bars
         day2_time = datetime(2026, 9, 15, 0, 0)
         times_day2 = [day2_time + timedelta(minutes=5*i) for i in range(10)]
-        # PP for Day 1 is 2650.0. Level PP is 2650.0.
-        # Day 2 bar 8: close=2648 (below PP)
-        # Day 2 bar 9: close=2652 (above PP + buffer)
         closes_day2 = [2640.0] * 8 + [2648.0, 2655.0]
 
         all_times = times + times_day2
         all_closes = closes + closes_day2
-        highs = [c + 1.0 for c in all_closes]
-        lows = [c - 1.0 for c in all_closes]
+        opens = [c - 2.0 for c in all_closes] # Green candles for BUY
+        highs = [c + 3.0 for c in all_closes]
+        lows = [o - 3.0 for o in opens]
         highs[10] = 2700.0
         lows[20] = 2600.0
 
         df = pd.DataFrame({
             'time': all_times,
-            'open': all_closes,
+            'open': opens,
             'high': highs,
             'low': lows,
             'close': all_closes
         })
 
-        params = GoldStrategyParameters(buffer_pips=2.0, sl_pips=30.0, tp_pips=60.0)
+        params = GoldStrategyParameters(buffer_pips=2.0, sl_pips=32.0, tp_pips=60.0, enable_session_filter=False)
         res, _ = eval_gold_signal(df, params)
 
         self.assertEqual(res.signal_type, "BUY")
         self.assertEqual(res.trigger_level, "PP")
-        self.assertAlmostEqual(res.suggested_sl, 2655.0 - 3.0) # 30 pips = $3.00
+        self.assertAlmostEqual(res.suggested_sl, 2655.0 - 3.20) # 32 pips = $3.20
         self.assertAlmostEqual(res.suggested_tp, 2655.0 + 6.0) # 60 pips = $6.00
 
     def test_sell_signal_crossover(self):
@@ -80,31 +75,30 @@ class TestGoldStrategy(unittest.TestCase):
 
         day2_time = datetime(2026, 9, 15, 0, 0)
         times_day2 = [day2_time + timedelta(minutes=5*i) for i in range(10)]
-        # Day 2 bar 8: close=2652 (above PP=2650)
-        # Day 2 bar 9: close=2645 (below PP - buffer)
         closes_day2 = [2660.0] * 8 + [2652.0, 2644.0]
 
         all_times = times + times_day2
         all_closes = closes + closes_day2
-        highs = [c + 1.0 for c in all_closes]
-        lows = [c - 1.0 for c in all_closes]
+        opens = [c + 2.0 for c in all_closes] # Red candles for SELL
+        highs = [o + 3.0 for o in opens]
+        lows = [c - 3.0 for c in all_closes]
         highs[10] = 2700.0
         lows[20] = 2600.0
 
         df = pd.DataFrame({
             'time': all_times,
-            'open': all_closes,
+            'open': opens,
             'high': highs,
             'low': lows,
             'close': all_closes
         })
 
-        params = GoldStrategyParameters(buffer_pips=2.0, sl_pips=30.0, tp_pips=60.0)
+        params = GoldStrategyParameters(buffer_pips=2.0, sl_pips=32.0, tp_pips=60.0, enable_session_filter=False)
         res, _ = eval_gold_signal(df, params)
 
         self.assertEqual(res.signal_type, "SELL")
         self.assertEqual(res.trigger_level, "PP")
-        self.assertAlmostEqual(res.suggested_sl, 2644.0 + 3.0)
+        self.assertAlmostEqual(res.suggested_sl, 2644.0 + 3.20) # 32 pips = $3.20
         self.assertAlmostEqual(res.suggested_tp, 2644.0 - 6.0)
 
 

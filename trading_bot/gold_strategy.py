@@ -36,14 +36,20 @@ class GoldStrategyParameters:
     ema_period: int = 9
     buffer_pips: float = 2.0        # Buffer in pips beyond pivot level (1 pip = $0.10 in Gold)
     cooldown_bars: int = 5          # Cooldown bars before re-trading the same pivot level
+    min_candle_range_pips: float = 5.0 # Minimum candle range (High - Low) in pips to filter micro-bars
 
     # Execution parameters
-    sl_pips: float = 30.0           # Stop Loss in pips ($3.00)
+    sl_pips: float = 32.0           # Stop Loss in pips ($3.20)
     tp_pips: float = 60.0           # Take Profit in pips ($6.00)
     fixed_lot_size: float = 0.01    # Fixed lot size
 
     # Safety
     daily_loss_cap_usd: float = 10.0
+
+    # Session Filter (London + NY: 07:00 UTC to 20:00 UTC / 12:00 PM to 01:00 AM PKT)
+    enable_session_filter: bool = True
+    session_start_utc_hour: int = 7
+    session_end_utc_hour: int = 20
 
 
 @dataclass
@@ -172,12 +178,31 @@ def eval_gold_signal(
     levels = pivots.get_levels_dict()
 
     c_curr = float(curr_row['close'])
+    o_curr = float(curr_row['open'])
+    h_curr = float(curr_row['high'])
+    l_curr = float(curr_row['low'])
     c_prev = float(prev_row['close'])
     ema9_val = float(curr_row['ema9'])
+
+    candle_range_pips = (h_curr - l_curr) / 0.10
+    min_range_pips = params.min_candle_range_pips
 
     buffer_dist = params.buffer_pips * 0.10 # 1 pip in XAUUSD = $0.10
     sl_dist = params.sl_pips * 0.10
     tp_dist = params.tp_pips * 0.10
+
+    # Session Filter Check (Asian session & late night blocked)
+    if params.enable_session_filter:
+        curr_hour = curr_row['time_dt'].hour
+        if curr_hour < params.session_start_utc_hour or curr_hour >= params.session_end_utc_hour:
+            return GoldSignalResult(
+                bar_index=curr_idx,
+                time=str(curr_row['time']),
+                close_price=c_curr,
+                reason=f"Outside trading session window ({curr_hour:02d}:00 UTC, active: {params.session_start_utc_hour:02d}:00-{params.session_end_utc_hour:02d}:00 UTC / Asian session blocked)",
+                ema9_val=ema9_val,
+                pivots=pivots
+            ), last_level_trade_bars
 
     signal_type = None
     trigger_level = None
@@ -190,19 +215,19 @@ def eval_gold_signal(
             if (curr_idx - last_level_trade_bars[lvl_name]) < params.cooldown_bars:
                 continue
 
-        # BUY: prev < lvl, curr > lvl + buffer, curr > ema9
-        if c_prev < lvl_val and c_curr > (lvl_val + buffer_dist) and c_curr > ema9_val:
+        # BUY: prev < lvl, curr > lvl + buffer, curr > ema9, green candle, range >= min_range
+        if c_prev < lvl_val and c_curr > (lvl_val + buffer_dist) and c_curr > ema9_val and c_curr > o_curr and candle_range_pips >= min_range_pips:
             signal_type = "BUY"
             trigger_level = lvl_name
-            reason = f"Bullish crossover above {lvl_name} ({lvl_val:.2f}) with Close > EMA9 ({ema9_val:.2f})"
+            reason = f"Bullish crossover above {lvl_name} ({lvl_val:.2f}) with Green candle & Close > EMA9 ({ema9_val:.2f})"
             last_level_trade_bars[lvl_name] = curr_idx
             break
 
-        # SELL: prev > lvl, curr < lvl - buffer, curr < ema9
-        elif c_prev > lvl_val and c_curr < (lvl_val - buffer_dist) and c_curr < ema9_val:
+        # SELL: prev > lvl, curr < lvl - buffer, curr < ema9, red candle, range >= min_range
+        elif c_prev > lvl_val and c_curr < (lvl_val - buffer_dist) and c_curr < ema9_val and c_curr < o_curr and candle_range_pips >= min_range_pips:
             signal_type = "SELL"
             trigger_level = lvl_name
-            reason = f"Bearish crossover below {lvl_name} ({lvl_val:.2f}) with Close < EMA9 ({ema9_val:.2f})"
+            reason = f"Bearish crossover below {lvl_name} ({lvl_val:.2f}) with Red candle & Close < EMA9 ({ema9_val:.2f})"
             last_level_trade_bars[lvl_name] = curr_idx
             break
 

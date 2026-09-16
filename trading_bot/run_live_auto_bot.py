@@ -1,13 +1,6 @@
 """
-Standalone CLI launcher for the NASDAQ live auto-trading engine (no dashboard needed).
-
-Drives `trading_bot.live_engine.LiveTradingEngine` - the same engine the
-Streamlit dashboard's Start/Stop button controls. Prefer:
-
-    streamlit run trading_bot/streamlit_app.py
-
-...and use the toggle there, which runs engine + dashboard from ONE command.
-Use this script only if you want the bot running with no UI at all.
+Standalone CLI launcher for both NASDAQ (USTECm) and GOLD (XAUUSDm) live auto-trading engines.
+Runs both engines on background daemon threads without requiring a browser UI.
 """
 
 import sys
@@ -19,35 +12,58 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from trading_bot.live_engine import LiveTradingEngine
+from trading_bot.gold_live_engine import GoldLiveTradingEngine
 
 
 def run_live_auto_trading():
-    engine = LiveTradingEngine(symbol="USTECm", db_path="nasdaq_trades.sqlite")
-    ok, msg = engine.start()
-    print(msg, flush=True)
-    if not ok:
-        return
+    db_path = "nasdaq_trades.sqlite"
 
-    printed = 0
+    nasdaq_engine = LiveTradingEngine(symbol="USTECm", db_path=db_path)
+    gold_engine = GoldLiveTradingEngine(symbol="XAUUSDm", db_path=db_path)
+
+    print("⚡ [MULTI-BOT CLI] Starting NASDAQ-100 & GOLD Auto-Trading Engines...", flush=True)
+
+    nasdaq_engine.start()
+    gold_engine.start()
+
+    printed_nasdaq = 0
+    printed_gold = 0
+
     try:
-        while engine.is_running():
+        while nasdaq_engine.is_running() or gold_engine.is_running():
             time.sleep(1)
-            lines = list(engine.log_lines)
-            for line in lines[printed:]:
+
+            # NASDAQ logs
+            lines_n = list(nasdaq_engine.log_lines)
+            for line in lines_n[printed_nasdaq:]:
                 try:
                     print(line, flush=True)
                 except UnicodeEncodeError:
                     encoding = getattr(sys.stdout, "encoding", None) or "ascii"
                     print(line.encode(encoding, errors="replace").decode(encoding), flush=True)
-            printed = len(lines)
-        if engine.error:
-            print(f"\n❌ Engine exited with error: {engine.error}", flush=True)
+            printed_nasdaq = len(lines_n)
+
+            # GOLD logs
+            lines_g = list(gold_engine.log_lines)
+            for line in lines_g[printed_gold:]:
+                try:
+                    print(line, flush=True)
+                except UnicodeEncodeError:
+                    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+                    print(line.encode(encoding, errors="replace").decode(encoding), flush=True)
+            printed_gold = len(lines_g)
+
     except KeyboardInterrupt:
-        print("\n🛑 Stop requested - shutting engine down...", flush=True)
-        engine.stop()
-        if engine._thread:
-            engine._thread.join(timeout=15)
-        print("🛑 Auto-trading engine stopped by user.", flush=True)
+        print("\n🛑 Stop requested - shutting down both engines...", flush=True)
+        nasdaq_engine.stop()
+        gold_engine.stop()
+
+        if nasdaq_engine._thread:
+            nasdaq_engine._thread.join(timeout=10)
+        if gold_engine._thread:
+            gold_engine._thread.join(timeout=10)
+
+        print("🛑 Both NASDAQ & GOLD engines stopped cleanly by user.", flush=True)
 
 
 if __name__ == "__main__":
