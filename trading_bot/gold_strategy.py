@@ -27,28 +27,35 @@ import numpy as np
 
 @dataclass
 class GoldStrategyParameters:
-    """Tunable parameters for Gold (XAUUSDm) Fib Pivot + EMA9 strategy."""
+    """Tunable parameters for Gold (XAUUSDm) Fib Pivot + EMA9 M1 strategy."""
     symbol: str = "XAUUSDm"
     magic_number: int = 9212001
-    timeframe_str: str = "M5"
+    timeframe_str: str = "M1"
 
     # Indicator parameters
     ema_period: int = 9
-    buffer_pips: float = 2.0        # Buffer in pips beyond pivot level (1 pip = $0.10 in Gold)
-    cooldown_bars: int = 5          # Cooldown bars before re-trading the same pivot level
-    min_candle_range_pips: float = 5.0 # Minimum candle range (High - Low) in pips to filter micro-bars
+    buffer_pips: float = 0.0        # Buffer in pips beyond pivot level (1 pip = $0.10 in Gold)
+    cooldown_bars: int = 10         # Cooldown bars (M1) before re-trading the same pivot level
+    min_candle_range_pips: float = 2.0 # Minimum candle range (High - Low) in pips to filter micro-bars
 
-    # Execution parameters
-    sl_pips: float = 32.0           # Stop Loss in pips ($3.20)
-    tp_pips: float = 60.0           # Take Profit in pips ($6.00)
-    fixed_lot_size: float = 0.01    # Fixed lot size
+    # EMA Overextension Shield
+    max_ema_distance_pips: float = 15.0 # Max distance from EMA 9 in pips ($1.50)
 
-    # Safety
+    # Execution parameters (Dynamic SL & TP)
+    sl_candle_range_multiplier: float = 2.0 # SL = 2.0 * Signal Candle Range
+    rr_ratio: float = 2.0                    # TP = 2.0 * SL (Risk-to-Reward 1:2)
+    min_sl_pips: float = 8.0                 # Minimum SL cap in pips to protect against spread
+    sl_pips: float = 32.0                    # Fallback SL in pips ($3.20)
+    tp_pips: float = 64.0                    # Fallback TP in pips ($6.40)
+    fixed_lot_size: float = 0.01             # Fixed lot size
+
+    # Safety Circuit Breakers
     daily_loss_cap_usd: float = 10.0
+    daily_profit_target_usd: float = 0.0
 
-    # Session Filter (London + NY: 07:00 UTC to 20:00 UTC / 12:00 PM to 01:00 AM PKT)
+    # Session Filter (Asian + London + NY: 00:00 UTC to 20:00 UTC / 05:00 AM to 01:00 AM PKT next day)
     enable_session_filter: bool = True
-    session_start_utc_hour: int = 7
+    session_start_utc_hour: int = 0
     session_end_utc_hour: int = 20
 
 
@@ -188,10 +195,8 @@ def eval_gold_signal(
     min_range_pips = params.min_candle_range_pips
 
     buffer_dist = params.buffer_pips * 0.10 # 1 pip in XAUUSD = $0.10
-    sl_dist = params.sl_pips * 0.10
-    tp_dist = params.tp_pips * 0.10
 
-    # Session Filter Check (Asian session & late night blocked)
+    # Session Filter Check (00:00 to 20:00 UTC active / 01:00 AM to 05:00 AM PKT off-hours blocked)
     if params.enable_session_filter:
         curr_hour = curr_row['time_dt'].hour
         if curr_hour < params.session_start_utc_hour or curr_hour >= params.session_end_utc_hour:
@@ -199,10 +204,22 @@ def eval_gold_signal(
                 bar_index=curr_idx,
                 time=str(curr_row['time']),
                 close_price=c_curr,
-                reason=f"Outside trading session window ({curr_hour:02d}:00 UTC, active: {params.session_start_utc_hour:02d}:00-{params.session_end_utc_hour:02d}:00 UTC / Asian session blocked)",
+                reason=f"Outside trading session window ({curr_hour:02d}:00 UTC, active: {params.session_start_utc_hour:02d}:00-{params.session_end_utc_hour:02d}:00 UTC / Off-hours blocked)",
                 ema9_val=ema9_val,
                 pivots=pivots
             ), last_level_trade_bars
+
+    # EMA Overextension Shield Check (15 pips limit)
+    ema_dist_pips = abs(c_curr - ema9_val) / 0.10
+    if params.max_ema_distance_pips > 0 and ema_dist_pips > params.max_ema_distance_pips:
+        return GoldSignalResult(
+            bar_index=curr_idx,
+            time=str(curr_row['time']),
+            close_price=c_curr,
+            reason=f"EMA 9 overextension limit exceeded ({ema_dist_pips:.1f} > {params.max_ema_distance_pips:.1f} pips), cooling down",
+            ema9_val=ema9_val,
+            pivots=pivots
+        ), last_level_trade_bars
 
     signal_type = None
     trigger_level = None
@@ -233,12 +250,16 @@ def eval_gold_signal(
 
     if signal_type == "BUY":
         entry = c_curr
-        sl = entry - sl_dist
-        tp = entry + tp_dist
+        sl_pips_calculated = max(candle_range_pips * params.sl_candle_range_multiplier, params.min_sl_pips)
+        tp_pips_calculated = sl_pips_calculated * params.rr_ratio
+        sl = entry - (sl_pips_calculated * 0.10)
+        tp = entry + (tp_pips_calculated * 0.10)
     elif signal_type == "SELL":
         entry = c_curr
-        sl = entry + sl_dist
-        tp = entry - tp_dist
+        sl_pips_calculated = max(candle_range_pips * params.sl_candle_range_multiplier, params.min_sl_pips)
+        tp_pips_calculated = sl_pips_calculated * params.rr_ratio
+        sl = entry + (sl_pips_calculated * 0.10)
+        tp = entry - (tp_pips_calculated * 0.10)
     else:
         entry = sl = tp = 0.0
         reason = "No crossover condition met"

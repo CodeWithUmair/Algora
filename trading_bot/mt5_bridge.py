@@ -58,6 +58,9 @@ class SymbolInfo:
     trade_contract_size: float
 
 
+_MT5_INIT_LOCK = threading.Lock()
+
+
 class MT5Bridge:
     """Bridge for interacting with MetaTrader5 or Simulation Engine."""
 
@@ -77,15 +80,32 @@ class MT5Bridge:
             self.is_simulation = True
             return True, "Running in High-Fidelity Simulation Mode (Native MT5 requires Windows + MT5 Terminal)"
         try:
-            init_kwargs = {}
-            if path:
-                init_kwargs["path"] = path
-            if not mt5.initialize(**init_kwargs):
-                self.is_connected = False
-                return False, f"MT5 initialization failed: {mt5.last_error()}"
-            self.is_connected = True
-            self.is_simulation = False
-            return True, "Connected to MetaTrader 5 Terminal successfully"
+            with _MT5_INIT_LOCK:
+                if mt5.terminal_info() is not None:
+                    self.is_connected = True
+                    self.is_simulation = False
+                    return True, "Connected to active MetaTrader 5 Terminal"
+
+                init_kwargs = {}
+                if path:
+                    init_kwargs["path"] = path
+
+                connected = False
+                last_err = None
+                for attempt in range(3):
+                    if mt5.initialize(**init_kwargs):
+                        connected = True
+                        break
+                    last_err = mt5.last_error()
+                    time.sleep(0.5)
+
+                if not connected:
+                    self.is_connected = False
+                    return False, f"MT5 initialization failed: {last_err}"
+
+                self.is_connected = True
+                self.is_simulation = False
+                return True, "Connected to MetaTrader 5 Terminal successfully"
         except Exception as e:
             self.is_connected = False
             return False, f"Exception connecting to MT5: {str(e)}"

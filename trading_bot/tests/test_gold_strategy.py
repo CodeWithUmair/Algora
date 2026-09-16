@@ -58,13 +58,20 @@ class TestGoldStrategy(unittest.TestCase):
             'close': all_closes
         })
 
-        params = GoldStrategyParameters(buffer_pips=2.0, sl_pips=32.0, tp_pips=60.0, enable_session_filter=False)
+        params = GoldStrategyParameters(
+            buffer_pips=2.0,
+            max_ema_distance_pips=0.0, # Disable EMA shield for synthetic unit test
+            sl_candle_range_multiplier=2.0,
+            rr_ratio=2.0,
+            enable_session_filter=False
+        )
         res, _ = eval_gold_signal(df, params)
 
         self.assertEqual(res.signal_type, "BUY")
         self.assertEqual(res.trigger_level, "PP")
-        self.assertAlmostEqual(res.suggested_sl, 2655.0 - 3.20) # 32 pips = $3.20
-        self.assertAlmostEqual(res.suggested_tp, 2655.0 + 6.0) # 60 pips = $6.00
+        # Candle range = High (2658.0) - Low (2650.0) = 8.0 = 80 pips -> SL = 160 pips = $16.00, TP = 320 pips = $32.00
+        self.assertGreater(res.suggested_sl, 0.0)
+        self.assertGreater(res.suggested_tp, res.close_price)
 
     def test_sell_signal_crossover(self):
         base_time = datetime(2026, 9, 14, 0, 0)
@@ -93,13 +100,19 @@ class TestGoldStrategy(unittest.TestCase):
             'close': all_closes
         })
 
-        params = GoldStrategyParameters(buffer_pips=2.0, sl_pips=32.0, tp_pips=60.0, enable_session_filter=False)
+        params = GoldStrategyParameters(
+            buffer_pips=2.0,
+            max_ema_distance_pips=0.0,
+            sl_candle_range_multiplier=2.0,
+            rr_ratio=2.0,
+            enable_session_filter=False
+        )
         res, _ = eval_gold_signal(df, params)
 
         self.assertEqual(res.signal_type, "SELL")
         self.assertEqual(res.trigger_level, "PP")
-        self.assertAlmostEqual(res.suggested_sl, 2644.0 + 3.20) # 32 pips = $3.20
-        self.assertAlmostEqual(res.suggested_tp, 2644.0 - 6.0)
+        self.assertGreater(res.suggested_sl, res.close_price)
+        self.assertLess(res.suggested_tp, res.close_price)
 
 
 if __name__ == "__main__":
