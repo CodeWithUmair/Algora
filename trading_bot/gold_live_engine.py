@@ -104,8 +104,9 @@ class GoldLiveTradingEngine:
         )
         breaker_mgr = CircuitBreakerManager(cb_config)
 
-        if not mt5_bridge.connect():
-            self.error = "Failed to connect to MT5 bridge"
+        ok, conn_msg = mt5_bridge.connect()
+        if not ok:
+            self.error = f"Failed to connect to MT5 bridge: {conn_msg}"
             self._log(f"❌ [GOLD BOT] {self.error}")
             self.running = False
             return
