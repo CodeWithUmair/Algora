@@ -17,6 +17,7 @@ import os
 import sys
 import threading
 import time
+import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
@@ -214,7 +215,6 @@ class MT5Bridge:
         bars = self.fetch_recent_bars(symbol=symbol, count=count, timeframe_str=timeframe_str)
         if not bars or not bars.get("closes"):
             return pd.DataFrame()
-        import pandas as pd
         return pd.DataFrame({
             "time": bars["times"],
             "open": bars["opens"],
