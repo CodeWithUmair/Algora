@@ -16,10 +16,8 @@ from trading_bot.gold_live_engine import GoldLiveTradingEngine
 
 
 def run_live_auto_trading():
-    db_path = "nasdaq_trades.sqlite"
-
-    nasdaq_engine = LiveTradingEngine(symbol="USTECm", db_path=db_path)
-    gold_engine = GoldLiveTradingEngine(symbol="XAUUSDm", db_path=db_path)
+    nasdaq_engine = LiveTradingEngine(symbol="USTECm", db_path="nasdaq_trades.sqlite")
+    gold_engine = GoldLiveTradingEngine(symbol="XAUUSDm", db_path="gold_trades.sqlite")
 
     print("⚡ [MULTI-BOT CLI] Starting NASDAQ-100 & GOLD Auto-Trading Engines...", flush=True)
 
