@@ -92,6 +92,7 @@ class GoldLiveTradingEngine:
         # per-level cooldown, stored as ABSOLUTE bar numbers (survives the sliding fetch window)
         self._last_level_abs: Dict[str, int] = {}
         self._last_bar_time: Optional[str] = None
+        self._last_heartbeat = 0.0
         self._known_tickets: Dict[int, Dict[str, Any]] = {}
         self._calendar = []
         self._calendar_fetched = 0.0
@@ -236,6 +237,10 @@ class GoldLiveTradingEngine:
         if bar_time == self._last_bar_time:
             return
         self._last_bar_time = bar_time
+        if time.time() - self._last_heartbeat >= 1800:   # proof-of-life every 30 min, so a quiet log is distinguishable from a hung bot
+            self._last_heartbeat = time.time()
+            self._log(f"HEARTBEAT alive | last closed bar {bar_time} | close {self.status['last_price']:.2f} | "
+                      f"open positions {len(positions)} | day P&L ${self.breaker.state.daily_pnl_usd:+.2f}")
 
         bar_dt = datetime.fromisoformat(bar_time.replace("Z", "+00:00"))
         if bar_dt.tzinfo is None:

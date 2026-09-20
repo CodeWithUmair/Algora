@@ -23,6 +23,8 @@ Each bot has its own position filter (by magic number), own realised-P&L daily-l
 
 **Strategy = Fib pivot + EMA9 (`gold_strategy.py`), exact rules and backtests in `GOLD_BACKTEST_VERIFICATION_SPEC.md`.** Honest expectation (real-data backtest, defaults): **M5 profitable over the last 1-6 months (PF ~1.5-1.9) but regime-dependent (2025 was flat/negative); M1 lost money in every window tested (PF 0.81-0.88, 3.3 months).** M1 is run because the owner asked for it - treat M1 results as unproven and compare `gold_m1_trades.sqlite` vs `gold_m5_trades.sqlite` after a few weeks. Average M5 stop is ~125 pips (~$12.5 at 0.01 lot) which exceeds the $10/day cap: one M5 loss stops that bot for the day. The news filter (15 min around high-impact USD events) is live-only and NOT backtested.
 
+**Per-bot results + logs (for reporting to the client):** `python -m trading_bot.report` prints, per bot (own DB each), trades opened/closed/open, win rate, net P&L, profit factor, avg win/loss and the last trades; options `--since YYYY-MM-DD`, `--bot gold_m1|gold_m5|nasdaq`. Logs: `logs/gold_m1.log`, `logs/gold_m5.log`, `logs/nasdaq.log` (each event timestamped in UTC) and `logs/launcher.log` (start / crash / restart / stop of every bot). Gold bots write a `HEARTBEAT alive` line every 30 min so a quiet log is not ambiguous. If the process/VPS itself is killed nothing can log that - the gap in timestamps + last heartbeat shows when it stopped.
+
 Re-run the backtest: `python -m trading_bot.fetch_mt5_history` (pulls real bars from MT5) then `python -m trading_bot.run_backtest_gold_fib --selfcheck`.
 
 ---
@@ -80,6 +82,10 @@ This is a freshly-built v1. What's already been smoke-tested is in §7 (unit tes
 ## 7. Session log
 
 *(Newest first.)*
+
+### 2026-09-21 - Cross-bot bugs found while answering "can the three bots block / contaminate each other?"
+
+Verified: gold M1, gold M5 and NASDAQ do NOT block each other from opening trades (positions are filtered per symbol+magic; account is HEDGING so two gold positions coexist). Found and fixed two real bugs in the NASDAQ engine (`live_engine.py`): (1) it summed ALL closed deals on the account (any symbol) into its own daily P&L and $10 loss breaker, so gold wins/losses would have moved NASDAQ's cap - now only `USTECm` deals count; (2) its breaker config never set a magic number, so NASDAQ orders were tagged with the default 9212001 (= gold M1's magic) instead of 9312001 - fixed, and NASDAQ DB rows now also store symbol + magic; (3) on stop/crash it called `mt5.shutdown()`, which is process-wide and would cut the gold bots' MT5 connection - removed. Added `trading_bot/report.py`, `logs/launcher.log` and the gold heartbeat.
 
 ### 2026-09-20 - Gold-only, two independent timeframe bots (M1 + M5), one command; gold engine rewritten
 

@@ -29,6 +29,18 @@ LOG_DIR = os.path.join(BASE_DIR, "logs")
 KNOWN = ("gold_m1", "gold_m5", "nasdaq")
 
 
+def llog(msg: str):
+    """Launcher-level event log (start / crash / restart / stop) -> console AND logs/launcher.log."""
+    from datetime import datetime, timezone
+    line = f"[{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}] [LAUNCHER] {msg}"
+    print(line, flush=True)
+    try:
+        with open(os.path.join(LOG_DIR, "launcher.log"), "a", encoding="utf-8") as f:
+            f.write(line + chr(10))
+    except Exception:
+        pass
+
+
 def build_engine(name: str, daily_loss_cap: float, news: bool):
     log_file = os.path.join(LOG_DIR, f"{name}.log")
     if name in ("gold_m1", "gold_m5"):
@@ -59,7 +71,7 @@ def main(argv=None):
     os.makedirs(LOG_DIR, exist_ok=True)
 
     engines = {n: build_engine(n, a.daily_loss_cap, not a.no_news_filter) for n in names}
-    print(f"[LAUNCHER] starting: {', '.join(names)} (single MT5 account, separate magic/DB/log per bot)", flush=True)
+    llog(f"starting: {', '.join(names)} (single MT5 account, separate magic/DB/log per bot)")
     for e in engines.values():
         e.start()
         time.sleep(1.5)   # stagger MT5 attach
@@ -79,9 +91,10 @@ def main(argv=None):
                             pass
                     printed[n] = len(lines)
                 if not e.is_running():
-                    print(f"[LAUNCHER] {n} is not running (error: {getattr(e, 'error', None)}). Restarting in {a.restart_delay:.0f}s...", flush=True)
+                    llog(f"{n} is NOT running (error: {getattr(e, 'error', None)}). Restarting in {a.restart_delay:.0f}s...")
                     time.sleep(a.restart_delay)
                     e.start()
+                    llog(f"{n} restarted")
     except KeyboardInterrupt:
         print("\n[LAUNCHER] Ctrl+C - stopping all bots...", flush=True)
         for e in engines.values():
@@ -89,7 +102,7 @@ def main(argv=None):
         for e in engines.values():
             if getattr(e, "_thread", None):
                 e._thread.join(timeout=10)
-        print("[LAUNCHER] all bots stopped.", flush=True)
+        llog("all bots stopped.")
 
 
 if __name__ == "__main__":

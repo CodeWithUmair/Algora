@@ -157,6 +157,7 @@ class LiveTradingEngine:
                 max_daily_loss_usd=10.0,  # Matches the validated $10/day loss cap from BACKTEST_REPORT.md
                                            # (was 15.0 - untested value).
                 cooldown_after_loss_minutes=5,
+                magic_number=9312001,  # NASDAQ's own tag (was silently defaulting to gold's 9212001)
             )
             cb_manager = CircuitBreakerManager(config=cb_config)
             storage = BotStorage(self.db_path)
@@ -214,6 +215,10 @@ class LiveTradingEngine:
                 today_midnight_utc = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
                 closed_deals = mt5_bridge.get_closed_deals(from_timestamp=today_midnight_utc)
                 for deal in closed_deals:
+                    # The account is shared with the gold bots: only count THIS symbol's deals, otherwise a
+                    # gold win/loss would move NASDAQ's daily P&L and its $10 loss breaker.
+                    if deal.get("symbol") != self.symbol:
+                        continue
                     ticket = deal["ticket"]
                     pnl = deal["profit"]
                     today_realized_pnl += pnl
@@ -368,6 +373,7 @@ class LiveTradingEngine:
                         "order_id": ticket, "direction": sig.direction, "model": sig.model,
                         "volume": lot, "entry_price": sig.close_price, "sl": sl_price, "tp": sig.suggested_tp,
                         "status": "OPEN", "opened_at": datetime.now(timezone.utc).isoformat(),
+                        "symbol": self.symbol, "magic_number": cb_config.magic_number,
                     })
                     self._sleep(30)
                 else:
@@ -380,10 +386,8 @@ class LiveTradingEngine:
             self.running = False
             self.status["connected"] = False
             self._log("🛑 NASDAQ engine stopped.")
-            try:
-                mt5_bridge.disconnect()
-            except Exception:
-                pass
+            # NOTE: deliberately NOT calling mt5_bridge.disconnect(): mt5.shutdown() is process-wide and would
+            # cut the MT5 connection out from under the gold engines running in the same process.
 
 
 _singleton: Optional[LiveTradingEngine] = None
