@@ -1,5 +1,32 @@
 # Project Handoff
 
+## >>> CURRENT VPS RUN INSTRUCTIONS (updated 2026-09-20) - READ THIS FIRST <<<
+
+**The VPS runs THREE independent bots by default: gold M1, gold M5 and NASDAQ (owner decision 2026-09-20; NASDAQ had been briefly off earlier the same day).**
+One command starts both (two threads, one process, one MT5 account):
+
+```
+python -m trading_bot.run_vps                          # gold M1 + gold M5 + nasdaq   (DEFAULT)
+python -m trading_bot.run_vps --bots gold_m1           # only gold M1
+python -m trading_bot.run_vps --bots gold_m5           # only gold M5
+python -m trading_bot.run_vps --bots gold_m1,gold_m5   # gold only (NASDAQ off)
+```
+(`python trading_botun_live_auto_bot.py` still works and just calls the same launcher.) Ctrl+C stops everything; a crashed bot is auto-restarted after 30s while the others keep running. Options: `--daily-loss-cap 10` (per gold bot, USD, default 10), `--no-news-filter`.
+
+| Bot | Timeframe | Magic # | Trade DB | Log file |
+|---|---|---|---|---|
+| `gold_m1` | M1 | 9212001 | `gold_m1_trades.sqlite` | `logs/gold_m1.log` |
+| `gold_m5` | M5 | 9212005 | `gold_m5_trades.sqlite` | `logs/gold_m5.log` |
+| `nasdaq` | tick/range bars | 9312001 | `nasdaq_trades.sqlite` | `logs/nasdaq.log` |
+
+Each bot has its own position filter (by magic number), own realised-P&L daily-loss breaker, own DB, own cooldown state, so one never affects another. Positions of the two gold bots can be open at the same time (M1 and M5 may both hold a gold trade). Demo-only is enforced on every order. Prereq: MT5 terminal installed and logged in (see `scripts/setup_vps.ps1`), AlgoTrading enabled.
+
+**Strategy = Fib pivot + EMA9 (`gold_strategy.py`), exact rules and backtests in `GOLD_BACKTEST_VERIFICATION_SPEC.md`.** Honest expectation (real-data backtest, defaults): **M5 profitable over the last 1-6 months (PF ~1.5-1.9) but regime-dependent (2025 was flat/negative); M1 lost money in every window tested (PF 0.81-0.88, 3.3 months).** M1 is run because the owner asked for it - treat M1 results as unproven and compare `gold_m1_trades.sqlite` vs `gold_m5_trades.sqlite` after a few weeks. Average M5 stop is ~125 pips (~$12.5 at 0.01 lot) which exceeds the $10/day cap: one M5 loss stops that bot for the day. The news filter (15 min around high-impact USD events) is live-only and NOT backtested.
+
+Re-run the backtest: `python -m trading_bot.fetch_mt5_history` (pulls real bars from MT5) then `python -m trading_bot.run_backtest_gold_fib --selfcheck`.
+
+---
+
 **Purpose of this file:** a single, growing source of truth for this project that travels *with the repo* across machines and Claude Code sessions. Same convention as the sibling gold bot's `HANDOFF.md` (`../VWAP-EMA-BOT/HANDOFF.md`) — reference sections get edited in place as things change, §7 Session Log is append-only.
 
 ---
@@ -53,6 +80,18 @@ This is a freshly-built v1. What's already been smoke-tested is in §7 (unit tes
 ## 7. Session log
 
 *(Newest first.)*
+
+### 2026-09-20 - Gold-only, two independent timeframe bots (M1 + M5), one command; gold engine rewritten
+
+Owner request: stop NASDAQ on the VPS for now, run the gold strategy as two independent bots (M1 and M5) with one easy command, separate trade DBs, optionally NASDAQ as a third thread later.
+
+Built: `trading_bot/run_vps.py` (launcher, `--bots` list, per-bot log file, crash auto-restart, Ctrl+C clean stop), `run_live_auto_bot.py` now delegates to it (default gold_m1+gold_m5, NASDAQ off), and `gold_live_engine.py` was **rewritten** to be timeframe-parametrised (`GoldLiveTradingEngine(timeframe="M1"|"M5")`, own magic/DB/breaker/cooldown per instance).
+
+**The old gold engine had never been able to trade - bugs found and fixed while doing this** (it had only ever waited for a signal on the VPS, none had fired): (1) `send_order` called with kwargs the bridge doesn't have (`order_type`, `sl`, `tp`) and result treated as a dict, so the first signal would raise `TypeError` and kill the thread; (2) `can_open_trade` called with wrong arguments, and the legacy noise gate would have refused every trade anyway; (3) it evaluated the still-forming candle every 3s and only traded if the signal appeared in the first 3s of a new bar, so it almost never could; (4) per-level cooldown used indexes inside a sliding 1000-bar window (never elapses correctly); (5) on M1 only 1000 bars (~16h) were fetched, so the "previous day" pivot was a partial day, unlike the backtest; (6) closed-trade P&L was never recorded, so the daily loss cap could never trip and the DB never got exit data. New engine: evaluates once per CLOSED bar, sends the order right after close, SL/TP from the signal close (same as backtest), reads realised P&L from MT5 deal history into DB + breaker, skips stale signals after a restart/gap, fetches 4000 M1 / 1500 M5 bars so pivots use the full previous UTC day.
+
+Verified: `trading_bot/tests/test_gold_live_engine.py` replays 3,400 real M5 bars through the engine with a fake broker and asserts the orders equal the validated backtest's signals (bar, direction, level, SL/TP distance, lot, magic) - passes; 38/38 unit tests pass; a 25s smoke run against the real MT5 demo terminal attached both bots (account 472544446) with separate DBs/logs. **No live order has been placed by this code yet** (market closed at the time) - first real fills are the remaining unverified step (watch `logs/*.log` after Sunday open).
+
+Not done / open: daily loss cap is per bot ($10 each), so three bots could lose $30/day in total on one account; the news filter is unbacktested; NASDAQ engine untouched (still starts via `--bots ...,nasdaq`).
 
 ### 2026-09-18 — New VPS stood up from scratch, bot is live and running both strategies together, two real bugs found and fixed
 
