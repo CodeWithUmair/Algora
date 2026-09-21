@@ -29,4 +29,4 @@ python -m pip install -r requirements.txt
 Write-Host ""
 Write-Host "Repo ready at $repoDir on branch GOLD." -ForegroundColor Green
 Write-Host "Still manual: install the MT5 terminal (download from your broker) and log in to the account once through its GUI so the credentials are saved - mt5_bridge.py attaches to that already-logged-in terminal, it does not log in itself." -ForegroundColor Yellow
-Write-Host "Then run (gold M1 + gold M5 + NASDAQ as independent bots): python -m trading_bot.run_vps" -ForegroundColor Yellow
+Write-Host "Then run (gold M5 only; NASDAQ is off by default): python -m trading_bot.run_vps" -ForegroundColor Yellow

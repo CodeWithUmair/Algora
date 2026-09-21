@@ -1,7 +1,7 @@
 """
-Back-compat entrypoint. Now delegates to run_vps.py (default: gold M1 + gold M5 + NASDAQ).
-  python trading_bot\run_live_auto_bot.py                        -> gold_m1 + gold_m5 + nasdaq
-  python trading_bot\run_live_auto_bot.py --bots gold_m1,gold_m5   (gold only)
+Back-compat entrypoint. Now delegates to run_vps.py (default: gold M5 only).
+  python trading_bot\run_live_auto_bot.py                        -> gold_m5 only
+  python trading_bot\run_live_auto_bot.py --bots gold_m5,nasdaq   (re-enable NASDAQ)
 """
 import os
 import sys

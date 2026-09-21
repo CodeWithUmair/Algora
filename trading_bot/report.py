@@ -15,7 +15,6 @@ import sys
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOTS = {
-    "gold_m1": ("GOLD M1 (XAUUSDm)", "gold_m1_trades.sqlite"),
     "gold_m5": ("GOLD M5 (XAUUSDm)", "gold_m5_trades.sqlite"),
     "nasdaq": ("NASDAQ (USTECm)", "nasdaq_trades.sqlite"),
 }

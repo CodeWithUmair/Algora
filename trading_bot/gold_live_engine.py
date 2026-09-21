@@ -1,9 +1,8 @@
 """
 Background-thread live engine for the XAU/USD (XAUUSDm) Fib Pivot + EMA9 scalper.
 
-One engine instance = ONE timeframe (M1 or M5) = one thread, with its OWN magic number,
-SQLite trade DB, circuit breaker and cooldown state. Several instances can run side by side
-on one MT5 account (see run_vps.py) and never see each other's positions.
+M5 ONLY (M1 was removed 2026-09-21: its backtest edge was lost). One engine = one thread with its own
+magic number, SQLite trade DB, circuit breaker and cooldown state (see run_vps.py).
 
 Execution semantics match trading_bot/run_backtest_gold_fib.py (the validated backtest):
   * the strategy is evaluated ONCE per CLOSED bar (the still-forming bar is dropped),
@@ -32,11 +31,11 @@ try:
 except Exception:  # non-Windows / not installed -> simulation mode, no deal history
     mt5 = None
 
-TF_SECONDS = {"M1": 60, "M5": 300}
+TF_SECONDS = {"M5": 300}
 # Bars fetched per timeframe: must cover the previous FULL UTC day (pivots) + EMA warm-up.
-TF_FETCH_BARS = {"M1": 4000, "M5": 1500}
+TF_FETCH_BARS = {"M5": 1500}
 # Distinct magic number per timeframe so positions/history of each instance stay separate.
-GOLD_MAGIC = {"M1": 9212001, "M5": 9212005}
+GOLD_MAGIC = {"M5": 9212005}
 
 
 class GoldLiveTradingEngine:
@@ -46,7 +45,7 @@ class GoldLiveTradingEngine:
         self,
         symbol: str = "XAUUSDm",
         db_path: Optional[str] = None,
-        timeframe: str = "M1",
+        timeframe: str = "M5",
         magic_number: Optional[int] = None,
         daily_loss_cap_usd: Optional[float] = None,
         use_news_filter: bool = True,
@@ -56,7 +55,7 @@ class GoldLiveTradingEngine:
     ):
         timeframe = timeframe.upper()
         if timeframe not in TF_SECONDS:
-            raise ValueError(f"Unsupported gold timeframe {timeframe!r} (use M1 or M5)")
+            raise ValueError(f"Unsupported gold timeframe {timeframe!r} (only M5 is supported)")
         self.symbol = symbol
         self.timeframe = timeframe
         self.name = f"GOLD {timeframe}"
@@ -333,13 +332,13 @@ class GoldLiveTradingEngine:
             self._log("Engine thread terminated.")
 
 
-# Process-wide singleton (used by the Streamlit dashboard) - defaults to the M1 instance
+# Process-wide singleton (used by the Streamlit dashboard) - defaults to the M5 instance
 _gold_engine_instance: Optional[GoldLiveTradingEngine] = None
 _gold_engine_lock = threading.Lock()
 
 
-def get_gold_engine(symbol: str = "XAUUSDm", db_path: str = "gold_m1_trades.sqlite",
-                    timeframe: str = "M1") -> GoldLiveTradingEngine:
+def get_gold_engine(symbol: str = "XAUUSDm", db_path: str = "gold_m5_trades.sqlite",
+                    timeframe: str = "M5") -> GoldLiveTradingEngine:
     global _gold_engine_instance
     with _gold_engine_lock:
         if _gold_engine_instance is None:

@@ -51,7 +51,7 @@ def check_mt5(now):
     rec("PASS" if ai.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO else "FAIL",
         "account is DEMO (bots refuse real accounts)", f"login {ai.login} {ai.server}")
     rec("PASS" if ai.margin_mode == mt5.ACCOUNT_MARGIN_MODE_RETAIL_HEDGING else "FAIL",
-        "account is HEDGING (so gold M1 + M5 can both hold a trade)", f"margin_mode={ai.margin_mode}")
+        "account is HEDGING (gold + nasdaq can hold positions side by side)", f"margin_mode={ai.margin_mode}")
     rec("PASS" if ai.balance > 0 else "FAIL", "balance",
         f"${ai.balance:.2f} equity ${ai.equity:.2f} free margin ${ai.margin_free:.2f} leverage 1:{ai.leverage}")
     rec("PASS" if (ai.trade_allowed and ai.trade_expert) else "FAIL", "account allows trading + expert advisors")
@@ -73,12 +73,12 @@ def check_mt5(now):
             rec("PASS" if m < ai.margin_free * 0.5 else "WARN", f"{sym} margin needed for {lot} lot",
                 f"${m:.2f} of ${ai.margin_free:.2f} free")
 
-    for tf, name, need in ((mt5.TIMEFRAME_M1, "M1", 4001), (mt5.TIMEFRAME_M5, "M5", 1501), (mt5.TIMEFRAME_M15, "M15", 1000)):
+    for tf, name, need in ((mt5.TIMEFRAME_M5, "M5", 1501), (mt5.TIMEFRAME_M15, "M15", 1000)):
         r = mt5.copy_rates_from_pos("XAUUSDm", tf, 0, need)
         n = 0 if r is None else len(r)
         rec("PASS" if n >= need else "FAIL", f"XAUUSDm {name} history (bot needs {need} bars)", f"got {n}")
 
-    for magic, name in ((9212001, "gold M1"), (9212005, "gold M5"), (9312001, "nasdaq")):
+    for magic, name in ((9212005, "gold M5"), (9312001, "nasdaq")):
         ps = [p for p in (mt5.positions_get() or []) if p.magic == magic]
         rec("INFO", f"open positions {name} (magic {magic})", str(len(ps)))
     mt5.shutdown()
@@ -120,24 +120,24 @@ def main():
         rec("WARN", "news calendar", str(e))
 
     logs = os.path.join(BASE, "logs")
-    for bot in ("gold_m1", "gold_m5"):
+    for bot in ("gold_m5",):
         age, _ = last_line_age(os.path.join(logs, f"{bot}.log"), "HEARTBEAT")
         if age is None:
             rec("WARN", f"{bot} heartbeat", "none yet - bot not started, or started <30 min ago")
         else:
             rec("PASS" if age < 40 else "FAIL", f"{bot} heartbeat", f"{age:.0f} min ago (must be <40 while running)")
-    for bot in ("gold_m1", "gold_m5", "nasdaq", "launcher"):
+    for bot in ("gold_m5", "nasdaq", "launcher"):
         age, line = last_line_age(os.path.join(logs, f"{bot}.log"))
         rec("INFO", f"{bot}.log last line", (f"{age:.0f} min ago: " if age is not None else "") + (line or "no log yet")[:110])
     errs = 0
-    for bot in ("gold_m1", "gold_m5"):
+    for bot in ("gold_m5",):
         p = os.path.join(logs, f"{bot}.log")
         if os.path.exists(p):
             errs += sum(1 for ln in open(p, encoding="utf-8", errors="replace")
                         if "ORDER FAILED" in ln or "Loop error" in ln or "FATAL" in ln)
     rec("PASS" if errs == 0 else "FAIL", "errors in gold logs (ORDER FAILED / Loop error / FATAL)", str(errs))
 
-    for f in ("gold_m1_trades.sqlite", "gold_m5_trades.sqlite", "nasdaq_trades.sqlite"):
+    for f in ("gold_m5_trades.sqlite", "nasdaq_trades.sqlite"):
         p = os.path.join(BASE, f)
         if not os.path.exists(p):
             rec("WARN", f"DB {f}", "not created yet (bot never started here)")

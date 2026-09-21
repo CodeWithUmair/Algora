@@ -27,15 +27,15 @@ import numpy as np
 
 @dataclass
 class GoldStrategyParameters:
-    """Tunable parameters for Gold (XAUUSDm) Fib Pivot + EMA9 M1 strategy."""
+    """Tunable parameters for Gold (XAUUSDm) Fib Pivot + EMA9 M5 strategy."""
     symbol: str = "XAUUSDm"
-    magic_number: int = 9212001
-    timeframe_str: str = "M1"
+    magic_number: int = 9212005
+    timeframe_str: str = "M5"
 
     # Indicator parameters
     ema_period: int = 9
     buffer_pips: float = 0.0        # Buffer in pips beyond pivot level (1 pip = $0.10 in Gold)
-    cooldown_bars: int = 10         # Cooldown bars (M1) before re-trading the same pivot level
+    cooldown_bars: int = 10         # Cooldown bars (M5) before re-trading the same pivot level
     min_candle_range_pips: float = 2.0 # Minimum candle range (High - Low) in pips to filter micro-bars
 
     # EMA Overextension Shield

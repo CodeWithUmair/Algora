@@ -1,13 +1,10 @@
 """
 Single-command VPS launcher: runs independent live bots as threads in ONE process, one MT5 account.
 
-  python -m trading_bot.run_vps                      # gold M1 + gold M5 + nasdaq   (default)
-  python -m trading_bot.run_vps --bots gold_m1       # only the M1 gold bot
-  python -m trading_bot.run_vps --bots gold_m5       # only the M5 gold bot
-  python -m trading_bot.run_vps --bots gold_m1,gold_m5          # gold only (nasdaq off)
+  python -m trading_bot.run_vps                         # gold M5 only   (default; NASDAQ is OFF)
+  python -m trading_bot.run_vps --bots gold_m5,nasdaq   # re-enable NASDAQ
 
 Each bot has its OWN magic number, SQLite trade DB, daily-loss breaker and log file:
-  gold_m1 : magic 9212001  gold_m1_trades.sqlite  logs/gold_m1.log
   gold_m5 : magic 9212005  gold_m5_trades.sqlite  logs/gold_m5.log
   nasdaq  : magic 9312001  nasdaq_trades.sqlite   logs/nasdaq.log
 A bot that crashes is restarted after a short delay (the others keep running). Ctrl+C stops all.
@@ -26,7 +23,7 @@ if BASE_DIR not in sys.path:
 from trading_bot.gold_live_engine import GoldLiveTradingEngine  # noqa: E402
 
 LOG_DIR = os.path.join(BASE_DIR, "logs")
-KNOWN = ("gold_m1", "gold_m5", "nasdaq")
+KNOWN = ("gold_m5", "nasdaq")
 
 
 def disable_console_quickedit():
@@ -58,7 +55,7 @@ def llog(msg: str):
 
 def build_engine(name: str, daily_loss_cap: float, news: bool):
     log_file = os.path.join(LOG_DIR, f"{name}.log")
-    if name in ("gold_m1", "gold_m5"):
+    if name == "gold_m5":
         tf = name.split("_")[1].upper()
         return GoldLiveTradingEngine(symbol="XAUUSDm", timeframe=tf, daily_loss_cap_usd=daily_loss_cap,
                                      use_news_filter=news, log_file=log_file,
@@ -73,7 +70,7 @@ def build_engine(name: str, daily_loss_cap: float, news: bool):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Run independent live bots on one MT5 account")
-    ap.add_argument("--bots", default="gold_m1,gold_m5,nasdaq", help=f"comma list from {KNOWN} (default: all three)")
+    ap.add_argument("--bots", default="gold_m5", help=f"comma list from {KNOWN} (default: gold_m5 only; nasdaq is off)")
     ap.add_argument("--daily-loss-cap", type=float, default=10.0, help="per-gold-bot realised daily loss cap in USD (default 10)")
     ap.add_argument("--no-news-filter", action="store_true", help="disable the (unbacktested) high-impact news pause")
     ap.add_argument("--restart-delay", type=float, default=30.0, help="seconds before restarting a crashed bot")

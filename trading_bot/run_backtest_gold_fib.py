@@ -254,11 +254,11 @@ def main():
         "ema_period", "buffer_pips", "cooldown_bars", "min_candle_range_pips", "max_ema_distance_pips",
         "sl_candle_range_multiplier", "rr_ratio", "min_sl_pips", "fixed_lot_size",
         "session_start_utc_hour", "session_end_utc_hour")})
-    for tf in ("M1", "M5"):
+    for tf in ("M5",):
         df = load_bars(tf, a.data)
         print(f"\n===== {tf}: {len(df)} real bars {df['time'].iloc[0]} -> {df['time'].iloc[-1]} =====")
         if a.selfcheck:
-            selfcheck(df.iloc[-40000:].reset_index(drop=True) if tf == "M1" else df.iloc[-20000:].reset_index(drop=True), P)
+            selfcheck(df.iloc[-20000:].reset_index(drop=True), P)
         for mult in (1.5, 2.0):
             PM = GoldStrategyParameters(**{**P.__dict__, "sl_candle_range_multiplier": mult})
             for name, sess in (("00-20 UTC (=05:00-01:00 PKT)", (0, 20)), ("07-20 UTC London+NY", (7, 20)), ("24h", (0, 24))):

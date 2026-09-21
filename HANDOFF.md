@@ -2,24 +2,20 @@
 
 ## >>> CURRENT VPS RUN INSTRUCTIONS (updated 2026-09-21) - READ THIS FIRST <<<
 
-**The VPS runs THREE independent bots by default: gold M1, gold M5 and NASDAQ (owner decision 2026-09-20; NASDAQ had been briefly off earlier the same day).**
-One command starts all of them (one thread per bot, one process, one MT5 account):
+**The VPS runs ONE bot: gold M5 (owner decision 2026-09-21). Gold M1 was REMOVED from the code (its backtest edge was lost; engine now rejects any timeframe but M5). NASDAQ is OFF by default but NOT removed - it is slow, will be revisited; re-enable with `--bots gold_m5,nasdaq`.**
 
 ```
-python -m trading_bot.run_vps                          # gold M1 + gold M5 + nasdaq   (DEFAULT)
-python -m trading_bot.run_vps --bots gold_m1           # only gold M1
-python -m trading_bot.run_vps --bots gold_m5           # only gold M5
-python -m trading_bot.run_vps --bots gold_m1,gold_m5   # gold only (NASDAQ off)
+python -m trading_bot.run_vps                          # gold M5 only   (DEFAULT)
+python -m trading_bot.run_vps --bots gold_m5,nasdaq    # re-enable NASDAQ
 ```
-(`python trading_bot/run_live_auto_bot.py` still works and just calls the same launcher.) Ctrl+C stops everything; a crashed bot is auto-restarted after 30s while the others keep running. Options: `--daily-loss-cap 10` (per gold bot, USD, default 10), `--no-news-filter`.
+(`python trading_bot/run_live_auto_bot.py` still works and just calls the same launcher.) Ctrl+C stops everything; a crashed bot is auto-restarted after 30s. Options: `--daily-loss-cap 10` (USD, default 10), `--no-news-filter`.
 
 | Bot | Timeframe | Magic # | Trade DB | Log file |
 |---|---|---|---|---|
-| `gold_m1` | M1 | 9212001 | `gold_m1_trades.sqlite` | `logs/gold_m1.log` |
 | `gold_m5` | M5 | 9212005 | `gold_m5_trades.sqlite` | `logs/gold_m5.log` |
-| `nasdaq` | tick/range bars | 9312001 | `nasdaq_trades.sqlite` | `logs/nasdaq.log` |
+| `nasdaq` (off by default) | tick/range bars | 9312001 | `nasdaq_trades.sqlite` | `logs/nasdaq.log` |
 
-Each bot has its own position filter (by magic number), own realised-P&L daily-loss breaker, own DB, own cooldown state, so one never affects another. Positions of the two gold bots can be open at the same time (M1 and M5 may both hold a gold trade). Demo-only is enforced on every order. Prereq: MT5 terminal installed and logged in (see `scripts/setup_vps.ps1`), AlgoTrading enabled.
+Demo-only is enforced on every order. Prereq: MT5 terminal installed and logged in (see `scripts/setup_vps.ps1`), AlgoTrading enabled. Historical notes below that mention gold M1 describe the removed bot.
 
 **Strategy = Fib pivot + EMA9 (`gold_strategy.py`), exact rules and backtests in `GOLD_BACKTEST_VERIFICATION_SPEC.md`.** Honest expectation (real-data backtest, defaults): **M5 profitable over the last 1-6 months (PF ~1.5-1.9) but regime-dependent (2025 was flat/negative); M1 lost money in every window tested (PF 0.81-0.88, 3.3 months).** M1 is run because the owner asked for it - treat M1 results as unproven and compare `gold_m1_trades.sqlite` vs `gold_m5_trades.sqlite` after a few weeks. Average M5 stop is ~125 pips (~$12.5 at 0.01 lot) which exceeds the $10/day cap: one M5 loss stops that bot for the day. The news filter (15 min around high-impact USD events) is live-only and NOT backtested.
 

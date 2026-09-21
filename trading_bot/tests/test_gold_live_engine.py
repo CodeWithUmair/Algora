@@ -87,11 +87,11 @@ class TestGoldLiveEngineReplay(unittest.TestCase):
                 self.assertAlmostEqual(abs(od["sl"] - c[i]) / PIP, sl_pips, places=3)
                 self.assertAlmostEqual(abs(od["tp"] - c[i]) / PIP, sl_pips * 2.0, places=3)
 
-    def test_two_timeframes_are_isolated(self):
-        m1 = GoldLiveTradingEngine(timeframe="M1"); m5 = GoldLiveTradingEngine(timeframe="M5")
-        self.assertNotEqual(m1.params.magic_number, m5.params.magic_number)
-        self.assertNotEqual(m1.db_path, m5.db_path)
-        self.assertEqual((m1.params.timeframe_str, m5.params.timeframe_str), ("M1", "M5"))
+    def test_only_m5_supported(self):
+        m5 = GoldLiveTradingEngine()
+        self.assertEqual((m5.params.timeframe_str, m5.params.magic_number), ("M5", 9212005))
+        with self.assertRaises(ValueError):
+            GoldLiveTradingEngine(timeframe="M1")
         with self.assertRaises(ValueError):
             GoldLiveTradingEngine(timeframe="H1")
 
