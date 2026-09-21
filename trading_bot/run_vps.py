@@ -29,6 +29,21 @@ LOG_DIR = os.path.join(BASE_DIR, "logs")
 KNOWN = ("gold_m1", "gold_m5", "nasdaq")
 
 
+def disable_console_quickedit():
+    """Windows console 'QuickEdit/Select' mode PAUSES every program that prints while text is selected
+    (a single click in the window is enough; title bar shows 'Select ...'). All bot threads print, so a stray
+    click would silently freeze all trading. Turn that mode off for this console."""
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.GetStdHandle(-10)                      # STD_INPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if k32.GetConsoleMode(h, ctypes.byref(mode)):
+            k32.SetConsoleMode(h, (mode.value | 0x0080) & ~0x0040)   # set EXTENDED_FLAGS, clear QUICK_EDIT
+    except Exception:
+        pass
+
+
 def llog(msg: str):
     """Launcher-level event log (start / crash / restart / stop) -> console AND logs/launcher.log."""
     from datetime import datetime, timezone
@@ -69,6 +84,7 @@ def main(argv=None):
     if bad or not names:
         raise SystemExit(f"Unknown bot(s) {bad}. Choose from {KNOWN}")
     os.makedirs(LOG_DIR, exist_ok=True)
+    disable_console_quickedit()
 
     engines = {n: build_engine(n, a.daily_loss_cap, not a.no_news_filter) for n in names}
     llog(f"starting: {', '.join(names)} (single MT5 account, separate magic/DB/log per bot)")
