@@ -1,9 +1,9 @@
 # Project Handoff
 
-## >>> CURRENT VPS RUN INSTRUCTIONS (updated 2026-09-20) - READ THIS FIRST <<<
+## >>> CURRENT VPS RUN INSTRUCTIONS (updated 2026-09-21) - READ THIS FIRST <<<
 
 **The VPS runs THREE independent bots by default: gold M1, gold M5 and NASDAQ (owner decision 2026-09-20; NASDAQ had been briefly off earlier the same day).**
-One command starts both (two threads, one process, one MT5 account):
+One command starts all of them (one thread per bot, one process, one MT5 account):
 
 ```
 python -m trading_bot.run_vps                          # gold M1 + gold M5 + nasdaq   (DEFAULT)
@@ -11,7 +11,7 @@ python -m trading_bot.run_vps --bots gold_m1           # only gold M1
 python -m trading_bot.run_vps --bots gold_m5           # only gold M5
 python -m trading_bot.run_vps --bots gold_m1,gold_m5   # gold only (NASDAQ off)
 ```
-(`python trading_botun_live_auto_bot.py` still works and just calls the same launcher.) Ctrl+C stops everything; a crashed bot is auto-restarted after 30s while the others keep running. Options: `--daily-loss-cap 10` (per gold bot, USD, default 10), `--no-news-filter`.
+(`python trading_bot/run_live_auto_bot.py` still works and just calls the same launcher.) Ctrl+C stops everything; a crashed bot is auto-restarted after 30s while the others keep running. Options: `--daily-loss-cap 10` (per gold bot, USD, default 10), `--no-news-filter`.
 
 | Bot | Timeframe | Magic # | Trade DB | Log file |
 |---|---|---|---|---|
@@ -24,6 +24,14 @@ Each bot has its own position filter (by magic number), own realised-P&L daily-l
 **Strategy = Fib pivot + EMA9 (`gold_strategy.py`), exact rules and backtests in `GOLD_BACKTEST_VERIFICATION_SPEC.md`.** Honest expectation (real-data backtest, defaults): **M5 profitable over the last 1-6 months (PF ~1.5-1.9) but regime-dependent (2025 was flat/negative); M1 lost money in every window tested (PF 0.81-0.88, 3.3 months).** M1 is run because the owner asked for it - treat M1 results as unproven and compare `gold_m1_trades.sqlite` vs `gold_m5_trades.sqlite` after a few weeks. Average M5 stop is ~125 pips (~$12.5 at 0.01 lot) which exceeds the $10/day cap: one M5 loss stops that bot for the day. The news filter (15 min around high-impact USD events) is live-only and NOT backtested.
 
 **Per-bot results + logs (for reporting to the client):** `python -m trading_bot.report` prints, per bot (own DB each), trades opened/closed/open, win rate, net P&L, profit factor, avg win/loss and the last trades; options `--since YYYY-MM-DD`, `--bot gold_m1|gold_m5|nasdaq`. Logs: `logs/gold_m1.log`, `logs/gold_m5.log`, `logs/nasdaq.log` (each event timestamped in UTC) and `logs/launcher.log` (start / crash / restart / stop of every bot). Gold bots write a `HEARTBEAT alive` line every 30 min so a quiet log is not ambiguous. If the process/VPS itself is killed nothing can log that - the gap in timestamps + last heartbeat shows when it stopped.
+
+**VPS operating rules / gotchas (learned the hard way, 2026-09-21):**
+- Update + start: `cd Desktop\Algora_repo; git pull origin GOLD; python -m trading_bot.run_vps`. Stop with **one** Ctrl+C and wait for `all bots stopped.`.
+- **Never click/select text inside the bot's PowerShell window.** Windows "QuickEdit/Select" mode (title bar shows `Select Administrator: ...`) pauses every program that prints, so ALL bots silently freeze until you press Esc/Enter. This caused a 4-hour outage (bots went silent at 00:00 UTC 2026-09-21 while signals were firing). `run_vps.py` now switches QuickEdit off at startup, but still keep the window untouched.
+- Health check (read-only): `python -m trading_bot.check_vps` prints PASS/WARN/FAIL for branch/commit, packages, MT5 + Algo Trading, DEMO + hedging account, symbols/min lot/margin, bar history, gold heartbeat freshness, log errors, DBs, open positions per magic. Paste its output when asking for support. A `[FAIL] gold_mX heartbeat` (>40 min) while the bots should be running means that bot is frozen/stopped.
+- Where to look: `logs/launcher.log` (start/crash/restart/stop), `logs/gold_m1.log`, `logs/gold_m5.log`, `logs/nasdaq.log`; a `SIGNAL ...` line is always followed by `ORDER PLACED`, `ORDER FAILED` or `Skipped: <reason>`.
+- Account must be HEDGING (VPS account 474015200 is: margin_mode=2) or M1 and M5 would net into one gold position.
+- Losses are capped at $10/day **per gold bot** (not for the account as a whole).
 
 Re-run the backtest: `python -m trading_bot.fetch_mt5_history` (pulls real bars from MT5) then `python -m trading_bot.run_backtest_gold_fib --selfcheck`.
 
@@ -82,6 +90,18 @@ This is a freshly-built v1. What's already been smoke-tested is in §7 (unit tes
 ## 7. Session log
 
 *(Newest first.)*
+
+### 2026-09-21 (later) - Outage root cause (frozen console), first real live order, health-check tooling
+
+**Outage:** the VPS run started 23:27 UTC 2026-09-20 went silent after 00:00 UTC (last heartbeats 23:57 M1 / 00:00 M5, nothing until the operator's Ctrl+C at 04:26). Replaying the live bars showed the strategy DID have signals in that gap (M1 00:05 BUY S1 and 11 more, M5 00:25 BUY S2 and 2 more), and the same live bars fed through the engine with a fake broker produced the orders - so it was not strategy/engine logic. Screenshots showed the console title `Select Administrator: Windows PowerShell`: Windows QuickEdit selection mode blocks the next `print()` of every bot thread, freezing all three. Fix: `run_vps.py` `disable_console_quickedit()` (commit `bdd2eb6`).
+
+**Order path validated against the real broker without trading:** the real `MT5Bridge.send_order` request (gold M1-size and M5-size stops, BUY and SELL, minimum 8-pip stop, and NASDAQ 0.1 lot) all passed `mt5.order_check` on the demo account; 0 positions/orders were created by that test.
+
+**First real live order from the new code (VPS demo acct 474015200, 2026-09-21 04:35:01 UTC):** gold M1 `SIGNAL BUY @ 4361.74 via S3` -> `ORDER PLACED #2408085737`, filled 4362.138, SL 4357.676, TP 4369.868 (RR 1:2, 0.01 lot); console title no longer shows "Select". Closed-trade accounting (the `CLOSED #... via TP/SL ... net $...` log line, DB update via `update_closed_trade`, breaker `record_trade_outcome`) had NOT yet been observed at the time of writing - verify on the first close with `python -m trading_bot.report --bot gold_m1`. Also confirm no premature `Position #... closed (P&L unavailable ...)` line (would mean position ticket != order ticket).
+
+**Tooling added:** `check_vps.py` (`d586018`), `report.py`, `logs/launcher.log`, gold `HEARTBEAT` every 30 min (`8c62c15`). NASDAQ engine fixes from the entry below (symbol-filtered deal accounting, own magic 9312001, no `mt5.shutdown()`).
+
+**Open / unverified:** first real close + P&L accounting (above); NASDAQ produced a `FAILED_AUCTION SELL` signal at ~23:5x on 2026-09-20 with no order (NASDAQ has its own session/filters - not investigated); backtests say M5 profitable in the last 1-6 months but regime-dependent and M1 negative in every tested window (see `GOLD_BACKTEST_VERIFICATION_SPEC.md`) - compare the two gold DBs after a few weeks before drawing conclusions.
 
 ### 2026-09-21 - Cross-bot bugs found while answering "can the three bots block / contaminate each other?"
 
