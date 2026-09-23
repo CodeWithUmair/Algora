@@ -45,6 +45,7 @@ class GoldStrategyParameters:
     sl_candle_range_multiplier: float = 2.0 # SL = 2.0 * Signal Candle Range
     rr_ratio: float = 2.0                    # TP = 2.0 * SL (Risk-to-Reward 1:2)
     min_sl_pips: float = 8.0                 # Minimum SL cap in pips to protect against spread
+    max_sl_pips: float = 0.0                 # Maximum SL cap in pips (0 = no cap, current behavior)
     sl_pips: float = 32.0                    # Fallback SL in pips ($3.20)
     tp_pips: float = 64.0                    # Fallback TP in pips ($6.40)
     fixed_lot_size: float = 0.01             # Fixed lot size
@@ -251,12 +252,16 @@ def eval_gold_signal(
     if signal_type == "BUY":
         entry = c_curr
         sl_pips_calculated = max(candle_range_pips * params.sl_candle_range_multiplier, params.min_sl_pips)
+        if params.max_sl_pips > 0:
+            sl_pips_calculated = min(sl_pips_calculated, params.max_sl_pips)
         tp_pips_calculated = sl_pips_calculated * params.rr_ratio
         sl = entry - (sl_pips_calculated * 0.10)
         tp = entry + (tp_pips_calculated * 0.10)
     elif signal_type == "SELL":
         entry = c_curr
         sl_pips_calculated = max(candle_range_pips * params.sl_candle_range_multiplier, params.min_sl_pips)
+        if params.max_sl_pips > 0:
+            sl_pips_calculated = min(sl_pips_calculated, params.max_sl_pips)
         tp_pips_calculated = sl_pips_calculated * params.rr_ratio
         sl = entry + (sl_pips_calculated * 0.10)
         tp = entry - (tp_pips_calculated * 0.10)

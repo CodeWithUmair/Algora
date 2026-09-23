@@ -31,7 +31,7 @@ class FakeBridge:
     def __init__(self, magic_number=None, symbol=None):
         self.magic = magic_number
 
-    def connect(self): return True, "fake"
+    def connect(self, path=None): return True, "fake"
     def get_account_info(self): return _Acc()
     def is_algo_trading_enabled(self): return True
     def get_open_positions(self, symbol=None, magic_number=None): return []
