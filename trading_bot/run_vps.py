@@ -9,6 +9,16 @@ Each bot has its OWN magic number, SQLite trade DB, daily-loss breaker and log f
   nasdaq  : magic 9312001  nasdaq_trades.sqlite   logs/nasdaq.log
 A bot that crashes is restarted after a short delay (the others keep running). Ctrl+C stops all.
 All bots are DEMO-only (enforced again on every order).
+
+Second MT5 account on the SAME VPS (e.g. running a different strategy variant alongside the
+first): run this script AGAIN as a SEPARATE process (a second PowerShell window), pointed at a
+second, separately-installed MT5 terminal logged into the second account, with --tag so its
+DB/log files don't collide with the first process's:
+
+  python -m trading_bot.run_vps --mt5-path "C:\\Program Files\\MetaTrader 5 EXNESS 2\\terminal64.exe" --max-sl-pips 180 --tag capped
+
+One MT5 Python connection can only ever talk to ONE terminal at a time (that's process-global,
+not per-thread) - that's why this needs a second OS process, not just another bot in this list.
 """
 
 import argparse
@@ -53,16 +63,18 @@ def llog(msg: str):
         pass
 
 
-def build_engine(name: str, daily_loss_cap: float, news: bool):
-    log_file = os.path.join(LOG_DIR, f"{name}.log")
+def build_engine(name: str, daily_loss_cap: float, news: bool, tag: str = "", mt5_path=None, max_sl_pips=0.0):
+    file_stem = f"{name}_{tag}" if tag else name   # keeps a second process's files from colliding with the first's
+    log_file = os.path.join(LOG_DIR, f"{file_stem}.log")
     if name == "gold_m5":
         tf = name.split("_")[1].upper()
         return GoldLiveTradingEngine(symbol="XAUUSDm", timeframe=tf, daily_loss_cap_usd=daily_loss_cap,
                                      use_news_filter=news, log_file=log_file,
-                                     db_path=os.path.join(BASE_DIR, f"{name}_trades.sqlite"))
+                                     db_path=os.path.join(BASE_DIR, f"{file_stem}_trades.sqlite"),
+                                     mt5_path=mt5_path, max_sl_pips=max_sl_pips)
     if name == "nasdaq":
         from trading_bot.live_engine import LiveTradingEngine
-        eng = LiveTradingEngine(symbol="USTECm", db_path=os.path.join(BASE_DIR, "nasdaq_trades.sqlite"))
+        eng = LiveTradingEngine(symbol="USTECm", db_path=os.path.join(BASE_DIR, f"{file_stem}_trades.sqlite"))
         eng.log_file = log_file
         return eng
     raise ValueError(name)
@@ -74,6 +86,14 @@ def main(argv=None):
     ap.add_argument("--daily-loss-cap", type=float, default=10.0, help="per-gold-bot realised daily loss cap in USD (default 10)")
     ap.add_argument("--no-news-filter", action="store_true", help="disable the (unbacktested) high-impact news pause")
     ap.add_argument("--restart-delay", type=float, default=30.0, help="seconds before restarting a crashed bot")
+    ap.add_argument("--mt5-path", default=None,
+                     help="terminal64.exe of a SPECIFIC MT5 install/account (gold_m5 only). "
+                          "Default: whatever terminal is already open. Use this to run a second "
+                          "account's bot as a separate process alongside a first one.")
+    ap.add_argument("--max-sl-pips", type=float, default=0.0,
+                     help="gold_m5: cap the dynamic SL at this many pips (0 = uncapped, current default behavior)")
+    ap.add_argument("--tag", default="", help="suffix for this process's DB/log filenames, so a second "
+                                                "process on the same VPS doesn't overwrite the first's files")
     a = ap.parse_args(argv)
 
     names = [b.strip().lower() for b in a.bots.split(",") if b.strip()]
@@ -83,8 +103,10 @@ def main(argv=None):
     os.makedirs(LOG_DIR, exist_ok=True)
     disable_console_quickedit()
 
-    engines = {n: build_engine(n, a.daily_loss_cap, not a.no_news_filter) for n in names}
-    llog(f"starting: {', '.join(names)} (single MT5 account, separate magic/DB/log per bot)")
+    engines = {n: build_engine(n, a.daily_loss_cap, not a.no_news_filter, tag=a.tag,
+                                mt5_path=a.mt5_path, max_sl_pips=a.max_sl_pips) for n in names}
+    tag_note = f" tag={a.tag!r}" if a.tag else ""
+    llog(f"starting: {', '.join(names)}{tag_note} (separate magic/DB/log per bot)")
     for e in engines.values():
         e.start()
         time.sleep(1.5)   # stagger MT5 attach
@@ -98,7 +120,7 @@ def main(argv=None):
                     lines = list(e.log_lines)
                     for line in lines[printed[n]:]:
                         try:
-                            with open(os.path.join(LOG_DIR, "nasdaq.log"), "a", encoding="utf-8") as f:
+                            with open(os.path.join(LOG_DIR, f"{n}_{a.tag}.log" if a.tag else f"{n}.log"), "a", encoding="utf-8") as f:
                                 f.write(line + chr(10))
                         except Exception:
                             pass

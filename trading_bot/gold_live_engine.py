@@ -52,6 +52,8 @@ class GoldLiveTradingEngine:
         bridge_factory: Callable[..., Any] = MT5Bridge,
         poll_seconds: float = 2.0,
         log_file: Optional[str] = None,
+        mt5_path: Optional[str] = None,
+        max_sl_pips: float = 0.0,
     ):
         timeframe = timeframe.upper()
         if timeframe not in TF_SECONDS:
@@ -64,10 +66,12 @@ class GoldLiveTradingEngine:
         self.poll_seconds = poll_seconds
         self.log_file = log_file
         self._bridge_factory = bridge_factory
+        self.mt5_path = mt5_path   # terminal64.exe of a SPECIFIC MT5 install/account; None = whatever's already open
 
         self.params = GoldStrategyParameters(
             symbol=symbol, timeframe_str=timeframe,
             magic_number=magic_number or GOLD_MAGIC[timeframe],
+            max_sl_pips=max_sl_pips,
         )
         if daily_loss_cap_usd is not None:
             self.params.daily_loss_cap_usd = daily_loss_cap_usd
@@ -130,7 +134,9 @@ class GoldLiveTradingEngine:
             self.started_at = datetime.now(timezone.utc)
             self._thread = threading.Thread(target=self._run, daemon=True, name=f"GoldLiveEngine-{self.timeframe}")
             self._thread.start()
-            self._log(f"Engine started: {self.symbol} {self.timeframe} magic #{self.params.magic_number} db={self.db_path}")
+            cap_note = f" max_sl_pips={self.params.max_sl_pips:.0f}" if self.params.max_sl_pips > 0 else ""
+            mt5_note = f" mt5={self.mt5_path}" if self.mt5_path else ""
+            self._log(f"Engine started: {self.symbol} {self.timeframe} magic #{self.params.magic_number} db={self.db_path}{cap_note}{mt5_note}")
 
     def stop(self):
         with self._lock:
@@ -153,7 +159,7 @@ class GoldLiveTradingEngine:
             magic_number=self.params.magic_number,
             cooldown_after_loss_minutes=0,
         ))
-        ok, msg = self.bridge.connect()
+        ok, msg = self.bridge.connect(path=self.mt5_path)
         if not ok:
             self.error = f"Failed to connect to MT5: {msg}"
             self._log(f"ERROR {self.error}")

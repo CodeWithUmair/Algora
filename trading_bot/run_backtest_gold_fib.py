@@ -97,10 +97,12 @@ def signal_at(i, o, h, l, c, ema, hour, date, day_stats, prev_of, p: GoldStrateg
         v = lv[name]
         if c[i - 1] < v and c[i] > v + buf and c[i] > ema[i] and c[i] > o[i] and rng_pips >= p.min_candle_range_pips:
             last_bar[name] = i
-            return "BUY", name, max(rng_pips * p.sl_candle_range_multiplier, p.min_sl_pips)
+            sl_pips = max(rng_pips * p.sl_candle_range_multiplier, p.min_sl_pips)
+            return "BUY", name, min(sl_pips, p.max_sl_pips) if p.max_sl_pips > 0 else sl_pips
         if c[i - 1] > v and c[i] < v - buf and c[i] < ema[i] and c[i] < o[i] and rng_pips >= p.min_candle_range_pips:
             last_bar[name] = i
-            return "SELL", name, max(rng_pips * p.sl_candle_range_multiplier, p.min_sl_pips)
+            sl_pips = max(rng_pips * p.sl_candle_range_multiplier, p.min_sl_pips)
+            return "SELL", name, min(sl_pips, p.max_sl_pips) if p.max_sl_pips > 0 else sl_pips
     return None
 
 
@@ -121,7 +123,11 @@ class Tr:
 
 
 def run(df, p: GoldStrategyParameters, lot=0.01, spread=0.25, commission_per_lot=0.0,
-        daily_loss_cap: Optional[float] = None, session=None, be=False, live_window: Optional[int] = None, tp_first: bool = False):
+        daily_loss_cap: Optional[float] = None, session=None, be: float = 0.0,
+        live_window: Optional[int] = None, tp_first: bool = False):
+    """be: move SL to breakeven (entry price) once price has covered this fraction of the
+    distance to TP (e.g. 0.6 = 60%). 0 = disabled (current live behavior). Checked only on
+    bars that didn't already hit SL/TP, so it never applies retroactively within one candle."""
     o, h, l, c, ema, date, hour, day_stats, prev_of = prepare(df, p.ema_period)
     n = len(c)
     mult = lot * 100.0
@@ -154,7 +160,7 @@ def run(df, p: GoldStrategyParameters, lot=0.01, spread=0.25, commission_per_lot
             fill = o[i] + spread if d == "BUY" else o[i]
             risk = (fill - sl) if d == "BUY" else (sl - fill)
             if risk > 0:
-                pos = dict(d=d, lvl=lvl, sl=sl, tp=tp, entry=fill, ei=i, sl_pips=sl_pips, risk=risk)
+                pos = dict(d=d, lvl=lvl, sl=sl, tp=tp, entry=fill, ei=i, sl_pips=sl_pips, risk=risk, be_done=False)
             pending = None
         if pos is not None:
             d = pos["d"]
@@ -175,6 +181,12 @@ def run(df, p: GoldStrategyParameters, lot=0.01, spread=0.25, commission_per_lot
                                  pos["sl_pips"], net, r, hit[0], date[i]))
                 day_pnl[date[i]] = day_pnl.get(date[i], 0.0) + net
                 pos = None
+            elif be > 0 and not pos["be_done"]:
+                target_dist = abs(pos["tp"] - pos["entry"]) * be
+                if (d == "BUY" and h[i] >= pos["entry"] + target_dist) or \
+                   (d == "SELL" and l[i] <= pos["entry"] - target_dist):
+                    pos["sl"] = pos["entry"]
+                    pos["be_done"] = True
         if i >= n - 1:
             break
         sig = signal_at(i, o, h, l, c, ema, hour, date, day_stats, prev_of, p, last_bar, session, lv_fn=lv_fn)

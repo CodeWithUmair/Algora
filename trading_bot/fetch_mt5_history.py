@@ -1,7 +1,8 @@
 """
-Pull real XAUUSDm M1/M5 history from a running/installable MT5 terminal into trading_bot/data_cache/.
-Read-only (market data only, no orders). Usage:  python -m trading_bot.fetch_mt5_history [terminal64.exe path]
-M1 depth is capped by the terminal's 'maxbars' (100000 = ~3.3 months); M5 goes back >1 year.
+Pull real XAUUSDm history (M1/M5/M15/M30/H1/H4/D1) from a running/installable MT5 terminal into
+trading_bot/data_cache/. Read-only (market data only, no orders).
+Usage:  python -m trading_bot.fetch_mt5_history [terminal64.exe path]
+M1 depth is capped by the terminal's 'maxbars' (100000 = ~3.3 months); the rest go back further.
 """
 import os, sys
 from datetime import datetime, timezone, timedelta
@@ -18,7 +19,10 @@ def main():
     mt5.symbol_select(SYMBOL, True)
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cache")
     os.makedirs(out, exist_ok=True)
-    for tf, name, days, chunk in ((mt5.TIMEFRAME_M1, "M1", 200, 60), (mt5.TIMEFRAME_M5, "M5", 400, 200)):
+    for tf, name, days, chunk in ((mt5.TIMEFRAME_M1, "M1", 200, 60), (mt5.TIMEFRAME_M5, "M5", 400, 200),
+                                   (mt5.TIMEFRAME_M15, "M15", 400, 200), (mt5.TIMEFRAME_M30, "M30", 730, 300),
+                                   (mt5.TIMEFRAME_H1, "H1", 730, 300), (mt5.TIMEFRAME_H4, "H4", 1500, 500),
+                                   (mt5.TIMEFRAME_D1, "D1", 3000, 1000)):
         end = datetime.now(timezone.utc); start = end - timedelta(days=days); cur = end; frames = []
         while cur > start:
             cs = max(start, cur - timedelta(days=chunk))

@@ -14,10 +14,11 @@ __pycache__/
 *.pyc
 venv/
 .venv/
-.env
 
 # Gold bots: per-timeframe trade DBs + runtime logs + pulled market data (per-machine)
 gold_*_trades.sqlite
 gold_*_trades.sqlite-journal
 logs/
 trading_bot/data_cache/
+config.bat
+node_modules
