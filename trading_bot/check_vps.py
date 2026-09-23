@@ -3,6 +3,7 @@ One-command health check for the VPS. Read-only (no orders). Run from the repo f
     python -m trading_bot.check_vps
 Prints PASS / WARN / FAIL per item. Paste the whole output to whoever is supporting the bots.
 """
+import utils.session
 import os
 import sqlite3
 import subprocess
